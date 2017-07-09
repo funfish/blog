@@ -90,7 +90,7 @@ function Compiler(vm, options) {
 7. 对observables遍历，通过Observer.observe方法对scope.a下的所有字段遍历，并在observer.js里面的bind方法，对所有的字段建立Object.defineProperty数据劫持，同时触发'set'事件，最后会传递到步骤4里面的事件监听'set'事件，执行bingdings['a.b'].update,现实DOM里面的数据首次展现
 
 通过对于普通的socpe.a = 12,而言打印创建的Vue实例有如下图
-！[image](https://github.com/funfish/blog/tree/master/images/Vue.png)
+![](https://github.com/funfish/blog/blob/master/images/Vue.PNG)
 compiler下创建了a: Binding构造函数，而这个实例的instances包含了一个Directive，里面存放的value 12，
 
 ## computed原理
