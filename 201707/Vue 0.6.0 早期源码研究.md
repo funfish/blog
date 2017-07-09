@@ -91,7 +91,8 @@ function Compiler(vm, options) {
 
 通过对于普通的socpe.a = 12,而言打印创建的Vue实例有如下图
 ![](https://github.com/funfish/blog/blob/master/images/Vue.PNG)
-compiler下创建了a: Binding构造函数，而这个实例的instances包含了一个Directive，里面存放的value 12，
+
+compiler下创建了a:Binding构造函数，而这个实例的instances包含了一个Directive，里面存放的value 12，
 
 ## computed原理
 类似于observables，在compiler里面也会创建compiler.computed数组，在define方法里除了在compiler.observables.push(binding)外，若是对象，并且有$get方法，则是computed，这个版本里面，computed是有$get方法的，well...当然还有$set; 
@@ -112,3 +113,6 @@ scope: {
 ## 监听数组
 在compiler.observables里面，在Observer.observe里面，可以看到当处理对象的typeOf值是对象或则数组都会进行特别处理，若是对象上文已经提过处理方法，若是数组的话又会如何呢？
 这里简要概述一下：通过ExpParser.parse方法，将bindings['a[0]'].value设{$get: newFunction('this.a; return this.a[0]')}的形式，后面就和computed类似了，这里有一点需要注意，在observer.js里面，重写了['push','pop','shift','unshift','splice','sort','reverse']等数组方法，当a.push(1)的时候，会触发mutate动作，执行bindings['a'].pub()，从而通知bindings['a[0]']的instances更新，具体内容可以自己去看源码
+
+参考资料
+1. [剖析Vue原理&实现双向绑定MVVM](https://segmentfault.com/a/1190000006599500)
