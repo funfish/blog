@@ -6,7 +6,7 @@
 看完本文之后，能明白Vue框架到底做了些什么，并自行构建一个早期Vue框架的简化版本。
 
 # 准备
-在介绍Vue 源码之前，需要了解Object.defineProperty,通过这个方式，在获取对象字段值时，调用getter方法，而设置对象字段值时候，调用setter方法，来实现数据劫。Object.defineProperty是Vue的基础内容，至今不熟悉的请一定要看(Object.defineProperty MDN)[https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty]
+在介绍Vue 源码之前，需要了解Object.defineProperty,通过这个方式，在获取对象字段值时，调用getter方法，而设置对象字段值时候，调用setter方法，来实现数据劫。Object.defineProperty是Vue的基础内容，至今不熟悉的请一定要看[Object.defineProperty MDN](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty)
 
 # 思路
 对于
@@ -29,7 +29,9 @@ function ViewModel (options) {
     // just compile. options are passed directly to compiler
     new Compiler(this, options)
 }
+```
 所以comilper.js才是生成Vue的核心所在，下面是简化了compiler构造函数
+```javascript
 function Compiler(vm, options) {
     let compiler = this;
 
