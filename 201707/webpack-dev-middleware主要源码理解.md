@@ -2,7 +2,7 @@
 每次用Vue-cli的时候，都会觉得配置的nodejs服务器很是让人省心，几个项目下来，都只用关心工程前端部分，用久了便想探其究竟。后来才发现原理用了express框架，代码也挺简单的，但是里面用的一个中间件webpack-dev-middleware，刚开始看的时候却不知有何用处？既然是express框架，又用的是SPA，路由不需要express来分发，那webpack-dev-middleware有何用处？抱着这样的疑问，看源码去吧
 
 # 思路
-一般express中间件的结构如下：
+一般express中间件的结构如下所示：
 ```javascript
 App.use((req, res, next) => {
   if (nextNeeded) {
