@@ -1,0 +1,24 @@
+# void 0
+最近在backbone的源码(两年前就研究过underscore的源码，现在才看backbone是不是有点那个)，发现里面用到了void 0，这是什么鬼？void居然出现在JavaScript里面，敢情以前用的ES是假的....这么基础的东西，瞟一眼MDN文档，还果然有:
+
+>void: 运算符 对给定的表达式进行求值，然后返回 undefined。
+
+So, void 0就是返回undefined了，这不是多此一举？直接用undefined来判断，不就完事了，何必用上void 0，这种云里雾里的操作？
+原来在早期的ECMAscript里面，undefined不是关键字，也就是说undefined是可以被修改的，如
+```
+var undefined = 1;
+```
+这样再用undefined判断某个变量，是不是就懵逼了？而void却是关键字，从这个角度出发void 0很有使用的必要，幸好从ES5开始(IE8+)就只把undefined当作一个全局只读的值，不能进行修改，修改了当然就报错咯。
+在backbone的issue里面也有人提到了void 0的[问题](https://github.com/jashkenas/backbone/pull/2960)，里面提到了void 0的运算速度比undefined更优，只是我在IE9+以上还有chrome上面测得的值都是十分接近的，所以性能不是需要关注，后面还提到void 0的字符要比undefined少，这好处之一，也是为什么我们不用void 1000, void 'hellow world'而是用void 0 的原因，这对主流大型框架还是很有意义的。只是普通的工程就木有必要了
+
+# let，const和var
+上周在chrome的控制台里面无意写了let a = sd，sd是没有声明的变量，所以回车后马上报错，而后面我再次声明let a的时候，又报错显示a已经声明了，于是我再直接在控制台敲 a 回车，结果报错显示a没有声明，这是在赤裸裸的耍我吗？问同事也是一脸懵逼+神奇的样子，后来也就没有管了，毕竟用没有声明过带的变量赋值给其他变量本来就是有问题的，更不要提后面的情况了。
+故事应该到这里就截止了，可是昨天，同事给我发了个[链接](https://www.zhihu.com/question/62966713/answer/204487664)，这是何其相似，这个实用性不大的问题上，居然还有人花了了两个月的时间，蛋疼的很。于是打开方应杭的介绍(链接在上面自己找)，发现里面的重点在于 Rick Waldron的一段话：
+
+>In JavaScript, all binding declarations are instantiated when control flow enters the scope in which they appear. Legacy var and function declarations allow access to those bindings before the actual declaration, with a "value" of undefined. That legacy behavior is known as "hoisting". let and const binding declarations are also instantiated when control flow enters the scope in which they appear, with access prevented until the actual declaration is reached; this is called the Temporal Dead Zone. The TDZ exists to prevent the sort of bugs that legacy hoisting can create.
+
+var的使用存在变量提升，而let/const是不存在变量提升的，控制语句到let/const时，声明会被实例化(instantiated )，但是在执行前禁止访问，不像var和function会先是被赋予undefined，后者称为变量提升，而前者变量提升却是不一样的，也由此生成了死区，就是变量必须在let声明语句后使用；这点其实在阮一峰老师的[ECMAscript 6](http://es6.ruanyifeng.com/#docs/let)已经介绍到了，只是没有提及死区形成原因；
+回顾前文提到的问题就很简单了，对于let a = sd a变量会在语句执行前实例化，而执行let a = sd的时候，自然报错，同时由于a已经实例化了，不能再次 let a(还得看是什么浏览器。。。。。。)，并且由于a 初始化失败，而在实例化后到初始化这段过程里面，a处于死区中，是无法访问的(acess prevented)，所以不能对a有其他操作。
+下文在引用ECMAscript的一段话:
+>The variables are created when their containing Lexical Environment is instantiated but may not be accessed in any way until the variable's LexicalBinding is evaluated. 
+>A variable defined by a LexicalBinding with an Initializer is assigned the value of its Initializer's AssignmentExpression when the LexicalBinding is evaluated, not when the variable is created
