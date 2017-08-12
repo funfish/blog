@@ -1,0 +1,48 @@
+# 前言
+记得某次在大神的博客里面讲技术选型，提到团队对Backbone的框架很熟悉，在一次开发的时候选用Backbone源码的一部分，再搭配其他的使用。虽然Backbone现在已经不流行了，但从几年前我就开始听说它的存在了，一直觉得这么神奇的框架肯定很有必要学习，看到大神提到选取Backbone源码的一部分，顿时觉得大神就是大神，对源码运用与此精通。最近有空看Backbone源码，细读时，如啃老牛肉，又硬又难吃，常常看了一部分忘记另外一部分，疼苦不堪，后来结合Backbone的[api文档](http://www.css88.com/doc/backbone/)和里面的Todos例子顿时觉得，神清气爽，仿佛任督二脉都打通了，只是看过之后愈发觉得，Backbone框架已经不是前端的弄潮儿，只是接近2000+的源码，里面的MVC思想，值得去研究，而不是天天研究如何运用新框架的api
+
+# 目的
+刚开始读Backbone就被开头的Events弄得云里雾里的，应该很多人有这样的经历，于是想介绍Events的实现思路以及其中的疑难；
+
+# 思路
+```javascript
+var object = {};
+_.extend(object, Backbone.Events);
+object.on('expand', function(){ alert('expanded'); });
+object.trigger('expand');
+```
+这是源码在介绍Events用到的例子，Events模块可以被扩展到任意的对象上面，而在其他的Bakbone模块如Model/Collection/View等，同样在其内部扩展了Events模块；
+事件模块，无非就是实现注册动作，监听动作，对应的在Events里面主要是on，listenTo，off， stopListening和trigger这几个；
+刚开始看的时候比较晕，后来一想从注册事件，到触发事件，看不懂究竟在做什么，那可不可以从后往前看，先看如何触发事件，在看如何注册事件，这么一想就事半功倍了。
+
+从trigger函数开始，落着点在triggerEvents函数，而在传递的events，一层层回溯，正是this._events，于是triggerEvents主体表达式就是
+```javascript
+this._events[name].callback.call(this._events[name].ctx)
+```
+这就完事了，也就是说on事件负责把事件对应的回调函数/上下文注册到this._events里面，然后需要trigger的时候，直接call就好，如此的简单明了。再看on事件的时候发现却实是如此；
+on事件通过onApi将事件需要的回调和上下文写入this.__events[name]里面；形成事件名字和回调映射的关系；这一切都是如此的顺畅，直到回头看on事件，发现写入this._events[name]的混杂着listening: _this.listening。
+
+## 奇形怪状的各种listening _listening listeningTo _listeners
+在on下面还有：
+```javascript
+if (_listening) {
+  var listeners = this._listeners || (this._listeners = {});
+  listeners[_listening.id] = _listening;
+  _listening.interop = false;
+}
+```
+更不要提listenTo函数，一开始看直接懵逼了，但是主要流程都懂了还怕这些listenXX干嘛？
+于是整理了一下和listenXX有关的所有地方，发现有如下关系：
+```javascript
+this._listeners[_listening.id] = _listening
+_listening = this._listeningTo[id] = new Listening(this, obj)
+```
+理清关系后发现都是纸老虎，就是在this._listeners里面添加个id和new Listening(this, obj)键值嘛，每当有个新的对象要监听的时候，就在this._listener里面添加构造函数Listening(this, obj)，而 _listeners则是个全局变量，用来传递这个构造函数。那细心的观众不难发现，this._listeningTo又是用来干嘛的？this._listeningTo不是和this._listener一摸一样的吗？
+开始我也是很疑惑，明明就是两个一样的对象，到后台打印也是一摸一样的呀？那为何作者要写两个呢？直到有一天，看着this._listeningTo和this._listener发呆的时候，发现，咦？前者有个To，后面没有呀，listeningTo不就意味着某个对象监听另外一个对象，而listener更像是监听者监听某个动作，再看看源码，哦，this._listeningTo出现在listenTo事件里面，而this._listener出现在On事件里面，So两个是完全不一样的呀。。。只有在纯粹的listenTo里面才会一样，如果单独监听某个动作，那创建的构造函数Listening不会出现在this._listeningTo里面。。。。。。尽然如此简单。。。。。。
+
+## interop库互相操作理解
+前面提到的on和listenTo，接下来可以看stopListening和off函数，本质上和之前提到的on和listenTo很相似，但是这里面反复提到listening.interop到底是什么东西呢？如果是真的话，则会执行listening.off/on函数，咦？前面不是已经执行了obj.off/on了吗？这又是有何作用，带着疑问翻看了backbone的issue，发现下面这条[issue](https://github.com/jashkenas/backbone/issues/3611)原来是当obj本身有on/off函数，而obj又不扩展Events，则会进入listening构造函数中保存的off/on事件。
+另外值得一提的是在on事件里面，若`listening.interop=true`，在进行listening.on之前，已经将全局变量_listening设置为void 0，后面再进行on函数的时候，其option中保存的listening将不是Listening实例而是undefined，所以在off事件中进行listening.off事件，若`this.interop=true`则会再次进入off事件，而在offApi中，listening.off之前会判断之前存放在this._events[name]中对应的option是否保存Listening实例，而前文提到这个时候listening为undefined，故不会重复循环进入listening.off里面；
+
+还剩下once相关的事件，看过underscore源码的你，或者是没有看过的你，肯定可以理解，这里就不解释了
+由于水平有限，若有水平有限，有错误的地方还请提出来
