@@ -1,0 +1,53 @@
+# 前言
+遥记得以前刚开始写JavaScript的时候，起步就是jQuery，用的也简单，后来想学习原生的JavaScript，刚上来就遇到this的问题，每次都要去看阮老师那篇2010年写的博客，再不就去点开那篇一直珍藏着的[JavaScript 秘密花园](http://bonsaiden.github.io/JavaScript-Garden/zh/)，每次看完都以为知道，但是后来遇到了总是要再回去一下，直到之前面试，以防万一又看了一遍。。。。。。书中提及的this，在这里更是要总结一下
+
+# 谈谈this
+```javascript
+function foo() {
+    var a = 2;
+    console.log(this.a)
+}
+
+foo() //undefined
+```
+上面的代码简单吧，相信大部分人都会认为打印出来的是2，但是结果却是undefined，难道this不应该指向自己吗？英语白学了不成。。。。。well，讲真，这里的this不是指向foo函数的，而是全局作用域，就是window，咦？为啥？或许你把foo函数的调用点，`foo()`理解为`window.foo()`就能豁然开朗了，那a自然是window的a。正如上面所提到的foo，它没有什么乱七八糟的修饰，而且调用点在全局，所以自然是全局的a变量，如果写成一下方式就是：
+```javascript
+function foo() {
+    var a = 2;
+    console.log(this.a)
+}
+function bar(){
+    this.a = 3; 
+    foo()
+}
+
+bar() //3
+```
+得到的值自然是3，虽然也是`window.bar()`，但是调用点在bar函数内部呀。
+
+上面提到的就是默认绑定，简单的方法就是查看调用点，根据调用点来判断作用域；一般都是被解析成全局变量；书中提到的this绑定有还有隐含绑定，明确绑定和new绑定
+
+隐含绑定其实上文多少都提到过，如下代码：
+```javascript
+function foo() {
+    console.log( this.a );
+}
+
+var obj = {
+    a: 2,
+    foo: foo
+};
+
+obj.foo(); // 2
+```
+这里的调用点使用了obj的环境来引用，so，this自然就指向obj，这个有点类似上文提到过的window.foo()，这一类通过调用点也是可以清晰知道this的指向；
+
+明确绑定，这里就是指显式的设置this了，用apply和call的方法，明确的指出要绑定的上下文
+最后一种就是new绑定，这个涉及到new操作，new操作符首先会创建一个对象，并绑定上this，除非放回其他的对象，否则放回new新建的对象，如下文所说：
+>只要 new 表达式之后的 constructor 返回（return）一个引用对象（数组，对象，函数等），都将覆盖new创建的匿名对象，如果返回（return）一个原始类型（无 return 时其实为 return 原始类型 undefined），那么就返回 new 创建的匿名对象。[链接](http://www.planabc.net/2008/02/20/javascript_new_function/)
+
+讲了这几个this之后你大概就知道怎么用了吧，另外还有箭头函数的this问题，这也是个值得注意的点，箭头函数的this就是定义时候所在的对象，而不是使用时候，并且this的指向是不可变的
+
+# 对象
+书中提到了对象，还有defineProperty的使用，以及class的使用，这些都是JSer基本要掌握的，这里就不介绍了，尤其实在ES6出来之后。
+但是文中提到用object.create()，使用如下`Bar.prototype = Object.create( Foo.prototype )`，在原型继承里面一般我们都是用`Bar.prototype = new Foo()`居多，问题也提到，这样做会出现一些意料之外的副作用，well，有时候我们就是要用到这些副作用呢。。。。
