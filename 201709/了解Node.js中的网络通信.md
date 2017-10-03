@@ -145,10 +145,10 @@ TCPWrap方法里面调用了tcp.c里面的方法，建立TCP的句柄，函数�
 
 # libuv为何物
 简单来讲就是跨平台io库，整合了window下的iocp和Linux的epoll，官网上有下图
-![](https://github.com/funfish/blog/blob/master/images/libuv.PNG)
+![](https://github.com/funfish/blog/raw/master/images/libuv.PNG)
 
 在node_maic.cc里面调用了start方法，加载bootstrap_node.js文件，并同时while循环调用uv_run()，uv_run就是libuv事件循环的入口，这个方法的执行如下图
-![](https://github.com/funfish/blog/blob/master/images/uv_run.PNG)
+![](https://github.com/funfish/blog/raw/master/images/uv_run.PNG)
 其中每一个模块和uv_run中的语句是对应，其中在window里面用`(*poll)(loop, timeout)`，而unix采用`uv__io_poll(loop, timeout)`。 
 上文提到的结构体uv_xx_s/t正是libuv的观察者，其中对应的类型uv_TYPE_t中的type指定了handle的使用目的。 至于具体的机理还是看[官方文档好](http://docs.libuv.org/en/v1.x/#documentation)。
 看过了文档以及api之后，再去看Node.js里面代码，well， 还是一脸懵逼。。。。
