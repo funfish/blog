@@ -1,5 +1,5 @@
-# 个人的博客
-欢迎互相讨论
+# 技术博客
+不急不躁，沉淀技术，而不是一步登天，弥补不足
 
 目录
 
@@ -15,4 +15,5 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
+    * [初识后端开发 express+MySQL](https://github.com/funfish/blog/issues/10)
     * [void 0 以及let const var 的理解](https://github.com/funfish/blog/issues/3)
