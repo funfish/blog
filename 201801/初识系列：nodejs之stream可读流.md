@@ -1,7 +1,7 @@
 # 前言
 这是初识系列的第一篇：stream可读流。刚接触stream的时候有点难以理解，在客户端开发，基本接触不到stream，顶多也就是文档下载的时候，后端返回文件流，这个和stream沾边的东西。如此神秘，自然成为了首个研究的对象。nodejs对象里面有可读流，可写流，还有可读可写流，像HTTP响应Response对象就是可读流，而服务端的是可写流，下面介绍一下可读流Readable。
 
-## 基本
+# 基本
 常见用到可读流的情景是用`fs.createReadStream(path[, options])`，并通过监听可读流的`data`与`end`事件来操作，或则是用pipe方法将可读流的数据流到可写流里面。
 
 可读流里面有两个构造函数，一个是Readable，一个是ReadableState。先看看ReadableState的构造函数：
