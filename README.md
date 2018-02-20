@@ -1,12 +1,12 @@
-# 技术博客
+# 博客
 不急不躁，沉淀技术，而不是一步登天，弥补不足
 
 目录
 * nodejs初识系列
-    * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/12)
+    * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 源码
-    * [Koa初识](https://github.com/funfish/blog/issues/11)
+    * [Koa初识](https://github.com/funfish/blog/issues/12)
     * [vuex源码分析](https://github.com/funfish/blog/issues/9)
     * [vue-router源码分析](https://github.com/funfish/blog/issues/8)
     * [了解Node.js中的网络通信](https://github.com/funfish/blog/issues/7)
@@ -18,6 +18,7 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
+    * [文件的故事](https://github.com/funfish/blog/issues/14)
     * [webpack工具介绍](https://github.com/funfish/blog/blob/master/201712/webpack工具介绍.pdf)
-    * [初识后端开发 express+MySQL](https://github.com/funfish/blog/issues/10)
+    * [初识后端开发 express+MySQL](https://github.com/funfish/blog/issues/11)
     * [void 0 以及let const var 的理解](https://github.com/funfish/blog/issues/3)
