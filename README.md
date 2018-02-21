@@ -14,6 +14,7 @@
     * [webpack-dev-middleware主要源码理解](https://github.com/funfish/blog/issues/2)
     * [Vue 0.6.0 早期源码研究](https://github.com/funfish/blog/issues/1)
 * 书
+    * [白帽子讲web安全](https://github.com/funfish/blog/issues/15)
     * [强制转换](https://github.com/funfish/blog/issues/10)
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
