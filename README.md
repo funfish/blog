@@ -19,6 +19,7 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
+    * [webpack构建优化](https://github.com/funfish/blog/issues/16)
     * [文件的故事](https://github.com/funfish/blog/issues/14)
     * [webpack工具介绍](https://github.com/funfish/blog/blob/master/201712/webpack工具介绍.pdf)
     * [初识后端开发 express+MySQL](https://github.com/funfish/blog/issues/11)
