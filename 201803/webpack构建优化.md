@@ -188,7 +188,7 @@ import 'antd/lib/date-picker/style/css';        // 加载 CSS
 
 这没看来，只是典型的引入组件，以及引入css模块而已。这是必然会被打包到公共模块的呀。看了未丑化的代码，发现用同一个组件的话，生成的不同文件 antd 的组件内容是一样的，不存在组件内部不一样导致没有打包在一起的情况。折腾许久后尚未解决，不晓得有没有大神知道。
 
-而且 roadhog.js 的方式不允许添加新的入口，只能直接改源代码。。。这项目要怎么上线呢？难道每次都要自己改一遍？这就是__**约定和可配置**__的问题所在了，后面大神的博客也有讨论到，最后的思想还是约定为若干模块，可自选配置，来适合不同的场景。
+而且 roadhog.js 的方式不允许添加新的入口，只能直接改源代码。。。这项目要怎么上线呢？难道每次都要自己改一遍？这就是**约定和可配置**的问题所在了，后面大神的博客也有讨论到，最后的思想还是约定为若干模块，可自选配置，来适合不同的场景。
 
 * DedupePlugin/OccurrenceOrderPlugin
 
@@ -300,7 +300,7 @@ new UglifyJsPlugin({
 
 另外前几天 webpack 4 已经正式发布了，大佬们都迫不及待的想介绍一波。初看一下，从之前的**配置化**思想更多转化为**约定俗成**，这确实是前端发展的趋势。尤其是这类工具，每次都学习一下，成本过高，看看`create-react-app`，基本都封装好webpack，上手用就可以了。而2017年的明星项目 parcel 更是夸张，直接跑，没有什么配置的。还是期待 webpack 4 的传说中的提升98%的速度吧。Twitter上面的数据基本在提升60%多。(Twitter数据)[https://twitter.com/TheLarkInn/status/964607133495865351?ref_src=twsrc%5Etfw&ref_url=https%3A%2F%2Fmedium.com%2Fmedia%2Ff45612237403efcbcc6212011da27699%3FpostId%3D6cdb994702d4]。
 
-对 webpack 4 感兴趣的可以看这篇(翻译)[http://www.zcfy.cc/article/x1f3bc-webpack-4-released-today-webpack-medium]（国外大佬们都迫不及待要介绍了，国内还在过春节元宵节，哈哈哈哈）
+对 webpack 4 感兴趣的可以看这篇[翻译](http://www.zcfy.cc/article/x1f3bc-webpack-4-released-today-webpack-medium)（国外大佬们都迫不及待要介绍了，国内还在过春节元宵节，哈哈哈哈）
 
 ## 参考
-1. (Webpack 构建性能优化探索)[https://github.com/pigcan/blog/issues/1]
+1. [Webpack 构建性能优化探索](https://github.com/pigcan/blog/issues/1)
