@@ -29,7 +29,7 @@ console.log(typeof preact.h('div', null));
 {
   "presets": ["es2015", "stage-0"],
   "plugins": [
-    ["transform-react-jsx", { "pragma": "h" }]
+  ["transform-react-jsx", { "pragma": "h" }]
   ]
 }
 ```
@@ -40,53 +40,53 @@ console.log(typeof preact.h('div', null));
 上文中的 `div` 变成了 h 函数的实现，h 函数在 Vue 里面也经常可以看到，更不要提 React，那 `h` 函数是什么呢？
 ```javascript
 export function h(nodeName, attributes) {
-	let children=EMPTY_CHILDREN, lastSimple, child, simple, i;
-	for (i=arguments.length; i-- > 2; ) {
-		stack.push(arguments[i]);
-	}
-	if (attributes && attributes.children!=null) {
-		if (!stack.length) stack.push(attributes.children);
-		delete attributes.children;
+  let children=EMPTY_CHILDREN, lastSimple, child, simple, i;
+  for (i=arguments.length; i-- > 2; ) {
+    stack.push(arguments[i]);
+  }
+  if (attributes && attributes.children!=null) {
+    if (!stack.length) stack.push(attributes.children);
+    delete attributes.children;
   }
   // 存在子节点，如text节点或者其他h函数
-	while (stack.length) {
-		if ((child = stack.pop()) && child.pop!==undefined) {
-			for (i=child.length; i--; ) stack.push(child[i]);
-		}
-		else {
-			if (typeof child==='boolean') child = null;
+  while (stack.length) {
+    if ((child = stack.pop()) && child.pop!==undefined) {
+      for (i=child.length; i--; ) stack.push(child[i]);
+    }
+    else {
+      if (typeof child==='boolean') child = null;
 
-			if ((simple = typeof nodeName!=='function')) {
-				if (child==null) child = '';
-				else if (typeof child==='number') child = String(child);
-				else if (typeof child!=='string') simple = false;
-			}
-      // 最终子节点都会推入children里面
-      // 而对于简单节点则直接相加就好了
-			if (simple && lastSimple) {
-				children[children.length-1] += child;
-			}
-			else if (children===EMPTY_CHILDREN) {
-				children = [child];
-			}
-			else {
-				children.push(child);
-			}
+      if ((simple = typeof nodeName!=='function')) {
+        if (child==null) child = '';
+        else if (typeof child==='number') child = String(child);
+        else if (typeof child!=='string') simple = false;
+      }
+    // 最终子节点都会推入children里面
+    // 而对于简单节点则直接相加就好了
+      if (simple && lastSimple) {
+        children[children.length-1] += child;
+      }
+      else if (children===EMPTY_CHILDREN) {
+        children = [child];
+      }
+      else {
+        children.push(child);
+      }
 
-			lastSimple = simple;
-		}
+      lastSimple = simple;
+    }
   }
   // p就是最终生成的 Vnode
-	let p = new VNode();
-	p.nodeName = nodeName;
-	p.children = children;
-	p.attributes = attributes==null ? undefined : attributes;
-	p.key = attributes==null ? undefined : attributes.key;
+  let p = new VNode();
+  p.nodeName = nodeName;
+  p.children = children;
+  p.attributes = attributes==null ? undefined : attributes;
+  p.key = attributes==null ? undefined : attributes.key;
   // 对生成的Vnode，都用options的vnode方法来处理
-	// if a "vnode hook" is defined, pass every created VNode to it
-	if (options.vnode!==undefined) options.vnode(p);
+  // if a "vnode hook" is defined, pass every created VNode to it
+  if (options.vnode!==undefined) options.vnode(p);
 
-	return p;
+  return p;
 }
 
 export function VNode() {}
@@ -98,12 +98,12 @@ export function VNode() {}
   nodeName: 'DIV',
   attributes: {id: 'abc'},
   children: [
-    {
-      nodeName: 'SPAN',
-      attributes: undefined,
-      children: null,
-      key: undefined,
-    }
+  {
+    nodeName: 'SPAN',
+    attributes: undefined,
+    children: null,
+    key: undefined,
+  }
   ]
   key : undefined,
 }
