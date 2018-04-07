@@ -6,6 +6,9 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 源码
+    * [preact源码 - 组件与回收机制](https://github.com/funfish/blog/issues/21)
+    * [preact源码 - diff机制](https://github.com/funfish/blog/issues/20)
+    * [preact源码 - VDOM](https://github.com/funfish/blog/issues/19)
     * [Koa初识](https://github.com/funfish/blog/issues/12)
     * [vuex源码分析](https://github.com/funfish/blog/issues/9)
     * [vue-router源码分析](https://github.com/funfish/blog/issues/8)
@@ -19,7 +22,7 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
-    * [三种常见算法](https://github.com/funfish/blog/issues/17)
+    * [三种常见算法](https://github.com/funfish/blog/issues/18)
     * [webpack构建优化](https://github.com/funfish/blog/issues/16)
     * [文件的故事](https://github.com/funfish/blog/issues/14)
     * [webpack工具介绍](https://github.com/funfish/blog/blob/master/201712/webpack工具介绍.pdf)
