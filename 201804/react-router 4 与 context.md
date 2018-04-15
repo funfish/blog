@@ -23,7 +23,7 @@ RouteConfig 基本上也是一维结构，传入到 routes 就好了。然而 ro
 **只是一开始傻乎乎的用，抄也没有抄全，部分按照自己的思路走，经常报错**，只有全抄过来才对。。妈呀太可怕了。于是乎想要看看研究一下 react-router 4 的设计！
 
 ### 从 Router 出发的 Context
-react-router 4 里面依然有 Router，而且这个 Router 是组件，精简一下，Router 代码如下：
+react-router 4 里面依然有 Router，精简一下，Router 代码如下：
 ```javascript
 class Router extends React.Component {
   static contextTypes = {
@@ -62,7 +62,7 @@ class Router extends React.Component {
 }
 ``` 
 
-去除掉提示性报错，PropTypes以及服务端渲染中需要在 componentWillMount/componentWillUnmount 操作 `this.unlisten` 部分，就只剩下这么一点点了。 Router 组件有子节点就渲染，没有就 null，简答吧。那要 Router 有何用？别急看看大头 childContextTypes/getChildContext 这又是什么？
+去除掉提示性报错，PropTypes以及需要在 componentWillMount/componentWillUnmount 和服务端渲染相关的操作 `this.unlisten` 部分，就只剩下这么一点点了。 Router 组件负责渲染子节点，没有就 null，简单吧。那要 Router 有何用？看看大头 childContextTypes/getChildContext 这又是什么？
 
 React 是有自己的 Context API 的，只是不建议开发者使用，并称之为实验性特性，可能移除，不熟悉 Redux/MobX 的最好都不要碰 Context API，俨然是不让人用的样子。Context API 使用还挺简单的，只要在 context 的提供者组件上申明一下就好了，包括 childContextTypes 以及 getChildContext 方法，这样在子组件里面在定义声明一下 contextTypes 就能够使用了。子组件里面怎么使用呢？通过 contextTypes 声明后直接用 `this.context` 就能够访问了。上面的 Router 中，其子组件在声明后，若要访问 Router 中的 router，直接用 `this.context.router` 就好了，是不是很简单！甚至在组件的生命周期里面也有 Context 传过来，这岂不是非常好，这样就不用一直 props 参数到子组件了，用 Context API 就好了，为何官方是不推荐使用的呢？
 
@@ -79,7 +79,7 @@ React 是有自己的 Context API 的，只是不建议开发者使用，并称�
 2. Provider: React.ComponentType<{value: T}>
 3. Consumer: React.ComponentType<{children: (value: T)=> React.ReactNode}>
 
-第一个是创建方法，生成一个 { Provider, Consumer } 对。Consumer 将从最近的 Provider 中读取 context value，如果没有匹配的 Provider，那将从 defaultValue 中读取值。是不是也很简单？但是意义却是非凡的。Provider 和 Consumer 可以放在自己想想要用的组件上面，不用顾虑组件的层级关系。可以通过对创建的 ` React.createContext` import 到想要用的组件就好了。这不就是相当于穿梭机嘛。数据飞来飞去多有趣。官网给了很好的[例子](https://reactjs.org/docs/context.html#when-to-use-context)，这里就不介绍具体用法了。反正记住：创建的{ Provider, Consumer } 对，Provider 组件提供 context value， 而这个 value 是以 props 的形式进入 Consumer 的子组件的，是不是很骚，不是 `this.context`，而是通过 `this.props` 传入的！还是下面这个简单例子吧：
+第一个是创建方法，生成一个 { Provider, Consumer } 对。Consumer 将从最近的 Provider 中读取 context value，如果没有匹配的 Provider，将从 defaultValue 中读取值。是不是也很简单？但是意义却是非凡的。Provider 和 Consumer 可以放在自己想想要用的组件上面，不用顾虑组件的层级关系。可以通过对创建的 ` React.createContext` import 到想要用的组件就好了。这不就是相当于穿梭机嘛。数据飞来飞去多有趣。官网给了很好的[例子](https://reactjs.org/docs/context.html#when-to-use-context)，这里就不介绍具体用法了。反正记住：创建的{ Provider, Consumer } 对，Provider 组件提供 context value， 而这个 value 是以 props 的形式进入 Consumer 的子组件的，是不是很骚，不是 `this.context`，而是通过 `this.props` 传入的！还是下面这个简单例子吧：
 ```javascript
 const ThemeContext = React.createContext({
   name: 'ni'
@@ -93,9 +93,9 @@ const ThemeContext = React.createContext({
 </ThemeContext.Provider>
 ```
 
-上面例子是不推荐用的，太暴殄天物了，这里是只是简单介绍一下形式而已，**Context API 的优势在于多层次的嵌套组件！**Provider 组件里面的传值 value 一般不是固定的嘛，要不然传值干嘛？一般传入 state/props 作为 value，state/props 一变化就可以在触发组件 Provider/Consumer 更新了。
+上面例子是不推荐用的，太暴殄天物了，这里是只是简单介绍一下形式而已，**Context API 的优势在于多层次的嵌套组件！**Provider 组件里面的传值 value 一般不是固定的嘛，要不然传值干嘛？一般传入 state/props 作为 value，state/props 一变化就可以触发组件 Provider/Consumer 更新了。
 
-可以看出这个 Context API 出来，和 Redux 的功能似乎有点重叠，都是通信问题。只是很明显的是 Redux 和 Context API 是有区别的，Redux 分离了数据和视图，而 Context API 还是在视图层做文章，并且过于灵活，不利于团队开发，不如 Redux 的数据控制来的规范清晰。并且 Redux 更多的是存储数据，Context API 更多还是一个状态的变化，一个从父组件传递到子组件的状态而已，这么看来更像是 state。另外呢，**对于 SPA 还有个问题，当页面切换的时候，需要传递给下个页面的信息，可以通过路由拼接参数传递，或者就是用 Redux 存储了，而这里 Context API 完全没有用武之地。。。还是很悲哀的。。**这么看来 Redux 还是很会有必要的。为此还有一篇[澄清的采访](http://blog.isquaredsoftware.com/2018/03/redux-not-dead-yet/)。当然对于小项目嘛，这个 Context API 完全是福利呀，为了传递个 props 而已，就不要用沉重麻烦的 redux 啦，多幸福。
+可以看出这个 Context API ，和 Redux 的功能似乎有点重叠，都是通信问题。只是很明显的是 Redux 和 Context API 是有区别的，Redux 分离了数据和视图，而 Context API 还是在视图层做文章，并且过于灵活，不利于团队开发，不如 Redux 的数据控制来的规范清晰。并且 Redux 更多的是存储数据，Context API 更多还是一个状态的变化，一个从父组件传递到子组件的状态而已，这么看来更像是 state。另外呢，**对于 SPA 还有个问题，当页面切换的时候，需要传递给下个页面的信息，可以通过路由拼接参数传递，或者就是用 Redux 存储了，而这里 Context API 完全没有用武之地。。。还是很悲哀的。。**这么看来 Redux 还是很会有必要的。为此还有一篇[澄清的采访](http://blog.isquaredsoftware.com/2018/03/redux-not-dead-yet/)。当然对于小项目嘛，这个 Context API 完全是福利呀，为了传递个 props 而已，就不要用沉重麻烦的 redux 啦，多幸福。
 
 ### Router 与 Route
 说 Context 好像说远了，回到 react-router 4 里面，Router 组件通过 Context API(老版本) 给组件传递了 Context，也就是 router，看看 router 是什么：
@@ -125,7 +125,7 @@ const history = createBrowserHistory();
 </Router>
 ```
 
-通过 createBrowserHistory 方法创建的 history，并传入给到 Router组件。Context 里面第二个是 route，可以看出 router.location 就是 history 里面的 location，而 route.match 是 Router 组件里面 state.match，这个 match 在后面会介绍到。
+通过 createBrowserHistory 方法创建的 history，并传入给到 Router 组件。Context 里面第二个是 route，可以看出 router.location 就是 history 里面的 location，而 route.match 是 Router 组件里面 state.match，这个 match 在后面会介绍到。
 
 上面就是 Router 组件了。常见的 Route 组件 写法：
 ```javascript
@@ -166,9 +166,9 @@ class Route extends React.Component {
     match: this.computeMatch(this.props, this.context.router)
   };
   computeMatch({ computedMatch, location, path, strict, exact, sensitive }, router) {
-    if (computedMatch) return computedMatch;// Switch 组件已经帮我们计算好了
+    if (computedMatch) return computedMatch;// 若Switch 组件已经帮我们计算好了，就返回
     const { route } = router;
-    // 传props有location，就用location，没有，就用 context.router.route
+    // 传的props有location，就用location，没有，就用 context.router.route
     const pathname = (location || route.location).pathname; 
     return matchPath(pathname, { path, strict, exact, sensitive }, route.match);
   }
@@ -197,8 +197,8 @@ class Route extends React.Component {
 
 可以看出 Route 组件的重点有三处：
 1. 获取传递过来的 Context，并 getChildContext，新建 route。
-2. match变化，在 route 的 props 更新的时候，修改 match。
-3. 更如 props 的不同，分别以 component/render/Children 的方式渲染子组件。
+2. match变化，location.pathname 变化的时候，修改 match。
+3. 根据 props 内容的不同，分别以 component/render/Children 的方式渲染子组件。
 
 这里重点看看 match，这个 match 是当前地址与该 Route 组件匹配关系。我们来看看 computeMatch 里面的 matchPath 方法：
 ```javascript
@@ -206,13 +206,13 @@ import pathToRegexp from "path-to-regexp";
 const matchPath = (pathname, options = {}, parent) => {
   if (typeof options === "string") options = { path: options };
   const { path, exact = false, strict = false, sensitive = false } = options;
-  // 此时的parent就是 Router 里面的 state.math！如果是当前路由是根路径的话为 match 为 true，否之为 false；为根路径正常渲染好了
+  // 此时的parent就是 Router 里面的 state.math！如果当前路由是根路径的话， match 为 true，否之为 false；为根路径就正常渲染好了
   if (path == null) return parent;
 
   const { re, keys } = compilePath(path, { end: exact, strict, sensitive });
-  // match：当前定义的路由pathname是否匹配 Route 的 props.path
+  // match：当前定义的路由 pathname 是否匹配 Route 的 props.path
   const match = re.exec(pathname);
-  // 不匹配，则说明该 Route 组件不会渲染任何子组件
+  // 不匹配，则说明该 Route 组件没有匹配上，不会渲染任何子组件
   if (!match) return null;
 
   const [url, ...values] = match;
@@ -221,9 +221,9 @@ const matchPath = (pathname, options = {}, parent) => {
   if (exact && !isExact) return null;
 
   return {
-    path, // the path pattern used to match
-    url: path === "/" && url === "" ? "/" : url, // the matched portion of the URL
-    isExact, // whether or not we matched exactly
+    path,
+    url: path === "/" && url === "" ? "/" : url, 
+    isExact,
     params: keys.reduce((memo, key, index) => {
       memo[key.name] = values[index];
       return memo;
@@ -239,14 +239,14 @@ const compilePath = (pattern, options) => {
 };
 ```
 
-可以看出 matchPath 方法，主要还是依赖于 `path-to-regexp` 包，这个在 vue-router 里面有经常看到。通过这个包，可以匹配传入的 pathname，是否匹配 Route 组件 props 过来的 path。如果不匹配则 match 为 null，在渲染的时候如果是 component/render 的方式 match 为 null，Route 组件的渲染结果就是 null，也就是**意味着该 Route 组件不匹配 pathname。**
+可以看出 matchPath 方法，主要还是依赖于 `path-to-regexp` 包，这个在 vue-router 里面有经常看到。通过这个包，可以将传入的 pathname，与 Route 组件 props 过来的 path 进行匹配。如果不匹配则 match 为 null，在渲染的时候如果是 component/render 的方式，则 match 为 null，同时 Route 组件的渲染结果就是 null，也就是**意味着该 Route 组件不匹配 pathname。**
 
-computeMatch 方法里面的 pathname 变量，这个 pathname 可以是传入参数 location 的，也可以是 context.router.route 的 patchname，而后者就是 history.pathname，也是当前地址。**这个当前地址和传参 location.pathname 会不一样吗？**会的！当然会！通过控制 Route 的 props.location 就可以修改 matchPath 的传参 pathname，从而当前地址与该 Route 的匹配关系 变更为props过来的 location.pathname 与该 Route 的匹配关系。是不是有种为所欲为的 feel。
+看看computeMatch 方法里面的 pathname 变量。这个 pathname 可以是传入参数 location 的，也可以是 context.router.route 的 patchname，而后者就是 history.pathname，也是当前地址。**这个当前地址和传参 location.pathname 会不一样吗？**会的！当然会！通过控制 Route 的 props.location 就可以修改 matchPath 的传参 pathname，从而使得当前地址与该 Route 的匹配关系变更为 props 过来的 location.pathname 与该 Route 组件的匹配关系。是不是有种为所欲为的 feel。
 
-Route 里面还有个值得注意的 props，是 exact，意思为是否全匹配。如果不设置，如果当要求的 `pathname = '/one'` 时，path 为 '/'，'/one' 或则 '/one/two' 的这个三个 Route 组件都会被匹配到。只有全匹配的时候才能精准匹配 '/one' 的组件。这也是为什么上面的 Route 写法里面会有一个 div 包裹两个 Route 组件，毕竟可能两个都匹配上，而 Router 组件只能有一个 child。
+Route 里面还有个值得注意的 props，是 exact，意思为是否全匹配。如果不设置，如果当要求的 `pathname = '/one'` 时，path 为 '/'，'/one' 或则 '/one/two' 的三个 Route 组件都会被匹配到。只有全匹配的时候才能精准匹配 '/one' 的组件。这也是为什么上面的 Route 写法里面会有一个 div 包裹两个 Route 组件，毕竟可能两个组件都匹配上，而 Router 组件又只能有一个 child。
 
 ### Switch 组件
-Switch 出场率还是很高的，而且 switch 这个单词也很形象，切换路由。常见的用法就是用 Swithc 组件，包裹 n 个 Route 组件。Switch 组件只会渲染一个 Route 组件，如果不是精准的 Route 组件，也只会渲染一个，所以美名为切换：只能留一个的意思。
+Switch 出场率还是很高的，而且 switch 这个单词也很形象，切换路由。常见的用法就是用 Switch 组件，包裹 n 个 Route 组件。Switch 组件只会渲染一个 Route 组件，如果不是精准的 Route 组件，也只会渲染一个，所以美名为切换：只能留一个的意思。
 ```javascript
 class Switch extends React.Component {
   // 已简化部分代码
@@ -287,19 +287,19 @@ class Switch extends React.Component {
 }
 ```
 
-这个 Switch 组件还是蛮简单的，对子节点 Route 组件遍历，和 Route 里面计算 math 的相同，都是调用 matchPath 方法，只是不同的地方在于传入 matchPath 的 pathname 参数是 Swith 自己的 props.location.patchname，而不是 Route 自己的 props.location.pathname。当计算出 match 之后，若符合就不会继续遍历其他 Route 组件了，从而实现仅渲染单个 Route 组件。
+这个 Switch 组件还是蛮简单的，对子节点 Route 组件进行遍历。对于 match 变量，和 Route 里面计算 math 的相同，都是调用 matchPath 方法，只是不同的地方在于传入 matchPath 的 pathname 参数是 Swith 自己的 props.location.patchname，而不是 Route 自己的 props.location.pathname。当计算出 match 之后，若符合就不会继续遍历其他 Route 组件了，从而实现仅渲染单个 Route 组件。
 
-在回头看看 Route 组件里面的 computeMatch 方法，当有 props.computedMatch 的时候，直接返回 computedMatch，不会继续下面自己的 matchPath 方法了，这个 props.computedMatch 正是 Switch 计算出来 match 变量。直接让 Route 组件自己的 props.location 无效化。**这就说明了 Switch 组件对其下面 Route 组件的渲染不仅是单独渲染，更有筛选作用。**
+在回头看看 Route 组件里面的 computeMatch 方法，当有 props.computedMatch 的时候，直接返回 computedMatch，不会继续下面自己的 matchPath 方法了，这个 props.computedMatch 正是 Switch 计算出来 match 变量。直接让 Route 组件自己的 props.location 与 context.router.route 无效化。**这就说明了 Switch 组件对其下面 Route 组件的渲染不仅是单独渲染，更有筛选作用。**
 
-这个时候在看看开头说的项目中遇到的 SPA 路由切换问题，官网给出的[方案](https://reacttraining.com/react-router/web/example/animated-transitions) 采用的方式，通过 Switch 组件的 props.location 实现对其下面的 Route 组件渲染。当路由变化的时候，前一个 Route 组件不会立马消失，而是在 Switch 组件下继续现实。同时新的 Route 也会继续出现，从而实现过渡效果。
+这个时候在看看开头说的项目中遇到的 SPA 路由切换问题，官网给出的[方案](https://reacttraining.com/react-router/web/example/animated-transitions) 采用的方式，通过 Switch 组件的 props.location 实现对其下面的 Route 组件渲染。当路由变化的时候，前一个 Route 组件不会立马消失，而是在 Switch 组件下继续现实，route 的 key 值并没有变化。同时新的 Route 也会继续出现，从而实现过渡效果。
 
 ### 其他组件
 Redirct 组件里面需要注意的是 props.from 是在 Switch 组件里面生效的，`const path = pathProp || from`，来计算 computedMatch，最后的结果则是
-从 match 的里面得出 to 的最后路径，而不是简简单单的 '/nameList/:id'，要具体到 id 是多少。当然这里还是用到了 `path-to-regexp` 模块。
+从 match 的里面结合 to 得出的路径，不是简简单单的 '/nameList/:id'，要具体到 id 是多少。当然这里还是用到了 `path-to-regexp` 模块。
 
 StaticRouter 针对服务端渲染的问题，有新的 Context 传过来 staticContext，在 Redirct 里面用得比较多。
 
-withRouter 是个 HOC 高阶组件，意在通过修饰者语句将组件传入 withRouter 里面。[官网](https://reactjs.org/docs/higher-order-components.html#static-methods-must-be-copied-over)里面介绍了一点就是将 Route 组件里面 match location history 传给过来目标组件，用处还是挺好的。
+withRouter 是个 HOC 高阶组件，意在通过修饰者语句将组件传入 withRouter 里面。[官网](https://reactjs.org/docs/higher-order-components.html#static-methods-must-be-copied-over)里面介绍了一点。withRouter 可以将 Route 组件里面 match location history 传给过来目标组件，用处还是挺好的。
 
 MemoryRouter 和 Promt 组件都比较简单，这里就不介绍了。
 
