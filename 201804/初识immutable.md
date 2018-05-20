@@ -1,5 +1,5 @@
 ## 前言
-Immutable.js 出来已经有很长一段时间了，只是日常项目中一直用不上。一个是平时没有怎么接触，不了解，另外一个是团队的开发节奏和习惯已经稳定下来了，要改变也不容易，了解一下也不差。
+Immutable.js 出来已经有很长一段时间了，只是日常项目中一直用不上。一个是平时没有怎么接触，不了解，另外一个是团队的开发节奏和习惯已经稳定下来了，要改变也不容易。当然了解一下也不差。
 
 不可变的数据一旦生成，就无法被改变，这就要求数据可持久化。可是日常中的引用类型的数据，一旦改变了，就改变了，谈什么持久化数据结构呢？
 
@@ -48,16 +48,16 @@ function makeList(origin, capacity, level, root, tail, ownerID, hash) {
   return list;
 }
 ```
-一个空内容的 List，也就是 `List()`，是 `makeList(0, 0, SHIFT))` 生成的，而 SHIFT 的值为 5。而传入 List 括号里面的值存储在 _root 和 _tail 里面，而 _root 和 _tail 里面的数据又是有一下结构：
+一个空内容的 List，也就是 `List()`，是 `makeList(0, 0, SHIFT))` 生成的，而 SHIFT 的值为 5。传入 List 括号里面的值会被存储在 _root 和 _tail 里面，只是 _root 和 _tail 里面的数据又有以下结构：
 ```javascript
-// @VNode
+// @VNode class
 constructor(array, ownerID) {
   this.array = array;
   this.ownerID = ownerID;
 }
 ```
 
-在 List 列表的生成里，就可以看到，持久化数据的形成，比如看看为何将数据分别保持在 _tail 和 _root 里面，以及是用何种方式保存；
+在 List 列表的生成里，就可以看到，持久化数据的形成，比如看看为何将数据分别保持在 _tail 和 _root 里面，以及又是用何种方式保存；
 
 以设置一个数据为例子，如： List([1]).set(0, 0):
 ```javascript
@@ -133,14 +133,14 @@ function editableVNode(node, ownerID) {
   }
   return new VNode(node ? node.array.slice() : [], ownerID);
 }
-// @VNode
+// @VNode class
 constructor(array, ownerID) {
   this.array = array;
   this.ownerID = ownerID;
 }
 ```
 
-在这里可以可能到 value/newLowerNode 是赋值给 `newNode.array[idx]`， 而 idx 并不是等于 index。以 _capacity 为 65 的 List 为例子，其 _level 为 5。当 index 为 60 的时候，有以下行为：
+在这里可以看到 value/newLowerNode 是赋值给 `newNode.array[idx]`， 而 idx 并不是等于 index。以 _capacity 为 65 的 List 为例子，其 _level 为 5。当 index 为 60 的时候，有以下行为：
 1. 第一次进入 idx = 1，level = 5，将会有 _tail.array[1] = newLowerNode;
 2. 计算 1 里面的 newLowerNode，第二次进入，此时 level = 0，idx = 28，于是有 newLowerNode.array[28] = value；
 可以看出这里生成个**二维的数组，其中每个子节点的长度最大为 32，于是这就构成了一个 32阶的树结构**。至于为什么阶长是 32，在代码中是这么解释的：
@@ -171,9 +171,9 @@ function makeMap(size, root, ownerID, hash) {
 
 存储的数据分为以下级别：
 1. ArrayMapNode，最简单方式，当键值对不超过8个的时候(不含嵌套的键值对)，采用这种方式，所有键值对保存在 entries 里面。同时 get/set 方法都较为简单，直接遍历一下获取就好了；
-2. BitmapIndexedNode，当 ArrayMapNode 里面元素超过8个的时候，_root 会转变为 BitmapIndexedNode，BitmapIndexedNode 的子节点是 ValueNode。而 BitmapIndexedNode 里面查/增/改元素，都需要用到 bit-map(位图)算法，BitmapIndexedNode.bitmap 存储的是键名和存储顺序的位图信息。例如 get 方法，通过 BitmapIndexedNode.bitmap，以及 key 名就可以获取该键值对的排列序号，从而获取到相应的 ValueNode；
-3. HashArrayMapNode，ValueNode 个数超过 16 个的时候，_root 会转变为 HashArrayMapNode 对象，其子元素为 ValueNode。而当 ValueNode 个数超过 32 个的情况时，HashArrayMapNode 的亲子元素可以是 HashArrayMapNode/BitmapIndexedNode，而 BitmapIndexedNode 的亲子元素可以是 BitmapIndexedNode/ValueNode。由此看来巨量的键值对，将有 HashArrayMapNode/BitmapIndexedNode/ValueNode 组合而成，而每个 HashArrayMapNode 最多有32个亲子元素，BitmapIndexedNode 最多有16个亲子元素。 HashArrayMapNode 类对应带的 count，代表其子元素的数量。当需要读取的时候，直接键名的哈希值，就能够实现了。。。。好像有点简单呀；
-4. HashCollisionNode，这种情况相当少，比如当 {null: 1} 和 {undefined: 2} 的键名是完全不同的，但是他们的键名的哈希值却是一样的。这使得后则 {undefined: 2} 创建的时候才会有 HashCollisionNode。HashCollisionNode 包含了这两个相同哈希键名数据；
+2. BitmapIndexedNode，当 ArrayMapNode 里面元素超过8个的时候，_root 会转变为 BitmapIndexedNode，BitmapIndexedNode 的子节点是 ValueNode。在 BitmapIndexedNode 里面查/增/改元素，都需要用到 bit-map(位图)算法，BitmapIndexedNode.bitmap 存储的是键名和存储顺序的位图信息。例如 get 方法，通过 BitmapIndexedNode.bitmap，以及 key 名就可以获取该键值对的排列序号，从而获取到相应的 ValueNode；
+3. HashArrayMapNode，ValueNode 个数超过 16 个的时候，_root 会转变为 HashArrayMapNode 对象，其子元素为 ValueNode。而当 ValueNode 个数超过 32 个的情况时，HashArrayMapNode 的亲子元素就会出现 HashArrayMapNode/BitmapIndexedNode，而 BitmapIndexedNode 的亲子元素可以是 BitmapIndexedNode/ValueNode。由此看来巨量的键值对，将有 HashArrayMapNode/BitmapIndexedNode/ValueNode 组合而成，而每个 HashArrayMapNode 最多有32个亲子元素，BitmapIndexedNode 最多有16个亲子元素。 HashArrayMapNode 类对应带的 count，代表其子元素的数量。当需要读取的时候，直接键名的哈希值，就能够实现了。。。。好像有点简单呀；
+4. HashCollisionNode，这种情况相当少，比如当 {null: 1} 和 {undefined: 2} 的键名是完全不同的，但是他们的键名的哈希值却是一样的。这使得后者 {undefined: 2} 创建的时候才会有 HashCollisionNode。HashCollisionNode 包含了这两个相同哈希值的键名下的数据；
 
 > // The hash code for a string is computed as
 > // s[0] * 31 ^ (n - 1) + s[1] * 31 ^ (n - 2) + ... + s[n - 1],
@@ -190,9 +190,9 @@ a = a.withMutations(list =>
 )
 ```
 
-上面是不使用 withMutations 的方法，每次 push 之后都需要重新对 a 重新赋值，才能保证正确性。而用了 withMutations 方法之后，不在需要创建中间 List，减少了复杂度，基本上运行时间比前一种快上好几倍。当然 withMutations 不会修改 a，所以需要将中间 List 赋值到 a。
+上面为原先不使用 withMutations 的方法，每次 push 之后都需要重新对 a 重新赋值，才能保证正确性。而用了 withMutations 方法之后，不再需要创建中间 List，减少了复杂度，基本上运行时间比前一种快上好几倍。当然 withMutations 不会修改 a，所以需要将中间 List 赋值到 a。
 
-为什么 withMutations 会有这样的效果呢？以 A(List) 为例子，当使用 withMutations 时候，其首先，生成的中间变量 B(List) 的属性值就是 A 的属性值，没有任何更改，当然如果 A 没有 __ownerID， B 的 __ownerID 会被设置上。但是对 B 进行 push/pop/set 等等操作的时候，A 其实是没有受到任何影响的。
+为什么 withMutations 会有这样的效果呢？以 A(List) 为例子，当使用 withMutations 时候，其首先，生成的中间变量 B(List)，其属性值就是 A 的属性值，没有任何更改，当然如果 A 没有 __ownerID， B 的 __ownerID 会被设置上。但是对 B 进行 push/pop/set 等等操作的时候，A 其实是没有受到任何影响的。
 ```javascript
 function editableVNode(node, ownerID) {
   if (ownerID && node && ownerID === node.ownerID) {
@@ -202,10 +202,9 @@ function editableVNode(node, ownerID) {
 }
 ```
 
-如在 withMutations 操作里面 set 数据的时候， 上面 if 语句是无法通过的，因为 A 的数据里面是没后 ownerID 的，相当于给 A 的数据拷贝一次到 B 里面，但是在 withMutations 里面再次 set 的时候，这时上面的 if 语句是可以通过的，于是又能节省不少运行时间。类似的 Map 也是相似的，这里就不再提到了。
+如在 withMutations 操作里面 set 数据的时候， 上面 if 语句是无法通过的，因为 A 的数据里面是没后 ownerID 的，相当于给 A 的数据浅拷贝一次到 B 里面，但是在 withMutations 里面再次 set 的时候，这时上面的 if 语句是可以通过的，于是又能节省不少运行时间。类似的 Map 也是相似的，这里就不再提到了。
 
 ## 其他
-immutable.js 类型的一层层继承关系，刚开始的看的时候会觉得有点乱，不管哪里都有 extends。细细看下来还是挺不错的。Immutable.js 还有个 Seq 类型，其特点就是懒。懒的意思是，直到获取使用了才开始计算。一开始觉得很神奇，居然有用的时候才计算的类型。。。well，后来一看这得益于一系列的 API，主要就是把调用方法函数数据什么的统统用闭包给存起来。。。。。。。好吧。
+immutable.js 类型的一层层继承关系，刚开始的看的时候会觉得有点乱，不管哪里都有 extends。细细看下来还是挺不错的。Immutable.js 还有个 Seq 类型，其特点就是懒。懒的意思是，直到获取使用了才开始计算。一开始觉得很神奇，居然有用数据的时候才计算的。。。well，后来一看这得益于一系列的 API，主要就是把调用方法函数数据什么的统统用闭包给存起来。。。。。。。好吧。
 
 ps：immutable.js 最神奇的地方还是在于其数据结构，下篇文章将会好好讲数据结构。
-
