@@ -20,13 +20,13 @@
 在本文中，我们介绍 Relaxed Radex Balanced Trees(RRB-Trees)，一种新的数据结构，扩展了 vector 结构，并保持了其基本特性，同时允许高效的串联，分割和插入操作。
 
 #### 1.2 Vectors
-![](https://github.com/funfish/blog/blob/master/images/vector trees.png)
+![](https://github.com/funfish/blog/blob/master/images/vectorTrees.PNG)
 
 如图所示，我们用 4 分叉树来作为所有 m 阶树的替代。除了特别的说明外，这个方式都适用于所有 m 阶树结构，包括 32 阶--这个有趣的不可变结构。如图1 就是用这种替代的方式来说明基础的 vector 结构。我们可以想象一个 32 阶版本，只要通过将 4 阶替换为32阶。
 
 在为 Clojure 开发不可变哈希字典时，开发组长 Rich Hickey 用了 Hash Array Mapped Tries(HAMT) 做底子。HAMT's 用 32 阶分支结构来实现一个可变的哈希字典。这个由 Clojure 首创的可变版本中，当项目被添加或移除字典的时候，树的路径才会被重写。同样的 32 阶分支结构被用来提供一个不可变数据的 vecter。在这里，对于项目来说 ‘key’ 是其在 vector 中的索引，而不仅仅是键名的哈希值。不可变性的实现是在修改和添加的时候拷贝或升级树的路径，这使得 32 阶分叉的查询时间复杂度是 (1/5) lgN。
 选择 32 作为 m 阶分叉的 vector，是从结构的不同使用来权衡确定的。分叉因子的提高会提高查询和迭代的性能，同时趋向于降低更新和扩展的性能。当 m 变化的时候，原则上查询时间等比与 logm N，而更新用时等比喻 m logm N。而实际上，由于高速缓冲行的原因，在64-128位的现代处理器下，使得复制了该大小的小块非常便宜。
-![](https://github.com/funfish/blog/blob/master/images/32 performance.png)
+![](https://github.com/funfish/blog/blob/master/images/32Performance.PNG)
 
 正如我们在图2 看到的， `m = 32` 是在查询和更新耗时中有良好的平衡，尤其是平时使用查询和迭代的次数要远多于更新。
 
@@ -35,7 +35,7 @@
 图 2 演示了使用 m 阶结构要比二叉树或 2-3 finger tree 要有优势。使用 32 阶的数据结构要是他们的 4 倍，而更新时间是相似的。这个原则上五倍的优势，被上层节点的缓存给稀释减少了。
 
 #### 1.3 串联
-![](https://github.com/funfish/blog/blob/master/images/vector concat.png)
+![](https://github.com/funfish/blog/blob/master/images/vectorConcat.PNG)
 
 在图 3 中展示了两个 vector。一个幼稚的方式是将一个 vector 向左移动，然后将所有的右手边的 vector 的节点复制到被串联的 vector 上合适的位置，根据右手边的 vector 的大小，决定处理的线性时间长短。或者可以遍历右手边的 vector 并将其添加到左侧的 vector 中，这也是线性处理。在本文的剩余部分，我们将会提出 RRB-Trees 是如何有效的进行串联。
 
@@ -44,13 +44,13 @@ RRB-Trees 通过调整固定的分叉数 m 来扩展已有的结构。为了实�
 
 #### 2.1 B-树
 B-树维持每一级中的最大分叉数 Mm 和最小分叉数 Ml。相应的最大高度 Hm，和最小高度 Hl，可以通过给定的项数 N 来表示：
-![](https://github.com/funfish/blog/blob/master/images/maxminHigh.png)
+![](https://github.com/funfish/blog/blob/master/images/maxminHigh.PNG)
 
 平衡性好的有一个高度比：Hr，并且这个值接近 1 的是玩美的平衡。
-![](https://github.com/funfish/blog/blob/master/images/hightRa.png)
+![](https://github.com/funfish/blog/blob/master/images/hightRa.PNG)
 
 Ml 越是接近 Mm，则树的平衡性越好。对于B-树，如果 Ml 是 Mm 的一半，则：
-![](https://github.com/funfish/blog/blob/master/images/maxminm.png)
+![](https://github.com/funfish/blog/blob/master/images/maxminm.PNG)
 
 当 Mm 变大的时候，B-树那就更平衡，这是总所周知的特性。
 
@@ -60,7 +60,7 @@ Ml 越是接近 Mm，则树的平衡性越好。对于B-树，如果 Ml 是 Mm �
 基数查询依赖于每个给定的层级的子树上希望的节点数是刚好 m 的 h-1 次方个。因此对于索引 i， 在该节点的子树中被找到的概率是 [i/(m 的 h-1 次方)]（ps：索引和节点都是基于 0 偏移）。如果节点少于希望的，我们需要用另外一个方式，我们称之为宽松的基数查询。
 
 在B-树，通过在父节点中存储一定区间 key，使用线性或则二进制查询父节点来找到包含目标 key 的子节点。在 RRB-树，当叉数少于 m 的时候，使用相似的方法，然而存储在父节点的数组中的是索引的区间而不是 keys 的区间。
-![](https://github.com/funfish/blog/blob/master/images/rrbtreeF4.png)
+![](https://github.com/funfish/blog/blob/master/images/rrbtreeF4.PNG)
 
 图 4 展示了RRB树的基本结构。树节点 A 包含了一个指向子树的数组， C, D, 和 E。该数组包含了这些子树的总的累计的子叶的数量。为了方便，我们将一个指向及该数组的相关区间称之为槽，例如，槽位 0 指向节点 C，该数组的区间说明了其包含了三个子树，这些子树同时也是子叶。
 
