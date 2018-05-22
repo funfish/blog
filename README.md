@@ -21,7 +21,7 @@
     * [Vue 0.6.0 早期源码研究](https://github.com/funfish/blog/issues/1)
 
 * 翻译
-    * [RRB-Trees  Efficient Immutable Vectors](https://github.com/funfish/blog/issues/25)
+    * [RRB-Trees  Efficient Immutable Vectors 上](https://github.com/funfish/blog/issues/25)
 
 * 书
     * [白帽子讲web安全](https://github.com/funfish/blog/issues/15)

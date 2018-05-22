@@ -103,7 +103,7 @@ function smi(i32) {
 
 
 ### 参考
-1. [Anjana Vakil: Immutable data structures for functional JS | JSConf EU 2017](Anjana Vakil: Immutable data structures for functional JS | JSConf EU 2017)，非常好的视频，通俗易懂；
+1. [Anjana Vakil: Immutable data structures for functional JS | JSConf EU 2017](https://www.youtube.com/watch?v=Wo0qiGPSV-s)，非常好的视频，通俗易懂；
 2. [RRB-Trees: Efficient Immutable Vectors](https://infoscience.epfl.ch/record/169879/files/RMTrees.pdf)，很无聊的论文，语法怪怪的，但是键 RRB-Trees 的都会说到这篇文章，翻译了一半不到。
 3. [Striving to Make Things Simple and Fast - Phil Bagwell](https://www.youtube.com/watch?v=K2NYwP90bNs)，Clojure 的一个讲座，说的挺好的，就是没有怎么听懂，和上面的论文比较搭。
 4. [Immutable 结构共享是如何实现的](https://github.com/dt-fe/weekly/issues/14)，很优秀的讨论。
