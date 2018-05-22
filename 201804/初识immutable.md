@@ -1,9 +1,9 @@
-## 前言
+### 前言
 Immutable.js 出来已经有很长一段时间了，只是日常项目中一直用不上。一个是平时没有怎么接触，不了解，另外一个是团队的开发节奏和习惯已经稳定下来了，要改变也不容易。当然了解一下也不差。
 
 不可变的数据一旦生成，就无法被改变，这就要求数据可持久化。可是日常中的引用类型的数据，一旦改变了，就改变了，谈什么持久化数据结构呢？
 
-## 接触immutable
+### 接触immutable
 感受一下immutable的不同：
 ```javascript
 // 原本写法：
@@ -31,7 +31,7 @@ console.log(b.equals(a)) // false
 
 其 API 还是很亲民的，基本上字如其名，大致接触一下就能够了解了。常用的用法这里就不做介绍了，需要了解，请移步[官方文档](http://facebook.github.io/immutable-js/)。
 
-## List 类型
+### List 类型
 Liit 类型可以说是常用的了，尤其是和 Javascript 里面的 Arry 类似。看一下 List 里面的主要部分：
 ```javascript
 function makeList(origin, capacity, level, root, tail, ownerID, hash) {
@@ -93,7 +93,7 @@ function getTailOffset(size) {
 
 可以看出在 updateList 里面，通过 _capacity 来判断，以 32位 为尺度将 _capacity 切分开来，当 index 大于 `((size - 1) >>> SHIFT) << SHIFT` 时候，更新 _trail, 否则更新 _root。例如： 当 _capacity 为 33，index 为 32 及其以下的时候，修改的都是 _root，否之则修改 _tail。这个是很好理解的，当数据量达到一定程度的时候，针对靠后的数据单独存储，而靠前的数据放在 _tail，分类处理。只是特别之处在与 _tail 的设计。
 
-### List 里面的 32 阶 RRB-Tree
+#### List 里面的 32 阶 RRB-Tree
 _tail 里面采用的是 RRB-Tree 的形式存储数据。这个什么树的先不介绍，先看看看怎么形成，形成的是什么，继续看上面的 updateList 方法，里面用到了 updateVNode 方法来生成 _tail:
 ```javascript
 function updateVNode(node, ownerID, level, index, value, didAlter) {
@@ -204,7 +204,7 @@ function editableVNode(node, ownerID) {
 
 如在 withMutations 操作里面 set 数据的时候， 上面 if 语句是无法通过的，因为 A 的数据里面是没后 ownerID 的，相当于给 A 的数据浅拷贝一次到 B 里面，但是在 withMutations 里面再次 set 的时候，这时上面的 if 语句是可以通过的，于是又能节省不少运行时间。类似的 Map 也是相似的，这里就不再提到了。
 
-## 其他
+### 其他
 immutable.js 类型的一层层继承关系，刚开始的看的时候会觉得有点乱，不管哪里都有 extends。细细看下来还是挺不错的。Immutable.js 还有个 Seq 类型，其特点就是懒。懒的意思是，直到获取使用了才开始计算。一开始觉得很神奇，居然有用数据的时候才计算的。。。well，后来一看这得益于一系列的 API，主要就是把调用方法函数数据什么的统统用闭包给存起来。。。。。。。好吧。
 
 ps：immutable.js 最神奇的地方还是在于其数据结构，下篇文章将会好好讲数据结构。
