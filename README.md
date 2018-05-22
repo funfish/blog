@@ -6,6 +6,8 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 源码
+    * [immutable.js 数据结构](https://github.com/funfish/blog/issues/24)
+    * [初识immutable](https://github.com/funfish/blog/issues/23)
     * [react-router 4 与 context](https://github.com/funfish/blog/issues/22)
     * [preact源码 - 组件与回收机制](https://github.com/funfish/blog/issues/21)
     * [preact源码 - diff机制](https://github.com/funfish/blog/issues/20)
@@ -17,6 +19,10 @@
     * [backbone之Events实现](https://github.com/funfish/blog/issues/4)
     * [webpack-dev-middleware主要源码理解](https://github.com/funfish/blog/issues/2)
     * [Vue 0.6.0 早期源码研究](https://github.com/funfish/blog/issues/1)
+
+* 翻译
+    * [RRB-Trees  Efficient Immutable Vectors](https://github.com/funfish/blog/issues/25)
+
 * 书
     * [白帽子讲web安全](https://github.com/funfish/blog/issues/15)
     * [强制转换](https://github.com/funfish/blog/issues/10)
