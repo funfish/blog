@@ -44,9 +44,11 @@ RRB-Trees 通过调整固定的分叉数 m 来扩展已有的结构。为了实�
 
 #### 2.1 B-树
 B-树维持每一级中的最大分叉数 Mm 和最小分叉数 Ml。相应的最大高度 Hm，和最小高度 Hl，可以通过给定的项数 N 来表示：
+
 ![](https://github.com/funfish/blog/blob/master/images/maxminHigh.PNG)
 
 平衡性好的有一个高度比：Hr，并且这个值接近 1 的是玩美的平衡。
+
 ![](https://github.com/funfish/blog/blob/master/images/hightRa.PNG)
 
 Ml 越是接近 Mm，则树的平衡性越好。对于B-树，如果 Ml 是 Mm 的一半，则：
