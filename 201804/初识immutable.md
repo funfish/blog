@@ -149,7 +149,7 @@ constructor(array, ownerID) {
 这不是逗我嘛。。。什么都没有写好吧，而且 github 里面最早的版本也是这么写的。。。。最后还好找到是有测试实验数据证明 32 也就是 SHIFT 为 5 是最佳实践。至于为什么要采用这种结构，不是本文要考虑的，将在下篇中给出来。
 
 最后数据生成的结构如下如所示：
-![](https://github.com/funfish/blog/blob/master/images/immutableTree.PNG)
+![](https://github.com/funfish/blog/raw/master/images/immutableTree.PNG)
 
 get 方法里面也是差不多的，通过 _capacity 来判断。
 
