@@ -29,6 +29,8 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
+
+    * [网络请求](https://github.com/funfish/blog/issues/26)
     * [三种常见算法](https://github.com/funfish/blog/issues/18)
     * [webpack构建优化](https://github.com/funfish/blog/issues/16)
     * [文件的故事](https://github.com/funfish/blog/issues/14)
