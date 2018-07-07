@@ -1,11 +1,14 @@
 # 博客
 不急不躁，沉淀技术，而不是一步登天，弥补不足
 
+欢迎大家多多指点
+
 目录
 * nodejs初识系列
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 源码
+    * [react 源码开始的那一步](https://github.com/funfish/blog/issues/28)
     * [immutable.js 数据结构](https://github.com/funfish/blog/issues/24)
     * [初识immutable](https://github.com/funfish/blog/issues/23)
     * [react-router 4 与 context](https://github.com/funfish/blog/issues/22)
@@ -29,7 +32,7 @@
     * [You-Dont-Know-JS之作用域与闭包](https://github.com/funfish/blog/issues/5)
     * [You-Dont-Know-JS之this 与对象原型](https://github.com/funfish/blog/issues/6)
 * 其他
-
+    * [HTTP 2 笔记](https://github.com/funfish/blog/issues/27)
     * [网络请求](https://github.com/funfish/blog/issues/26)
     * [三种常见算法](https://github.com/funfish/blog/issues/18)
     * [webpack构建优化](https://github.com/funfish/blog/issues/16)
