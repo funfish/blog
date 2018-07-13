@@ -25,6 +25,9 @@
 
 * 翻译
     * [RRB-Trees  Efficient Immutable Vectors 上](https://github.com/funfish/blog/issues/25)
+    * [使用GraphQL查询参数来设计强大的API](https://www.zcfy.cc/article/designing-powerful-apis-with-graphql-query-parameters)
+    * [如何让你的代码整洁漂亮 – Hacker Noon](https://www.zcfy.cc/article/how-to-make-your-code-clean-and-beautiful-hacker-noon)
+    * [2017年最流行的Node.js教程精选 | @RisingStack](https://www.zcfy.cc/article/the-most-popular-node-js-tutorials-of-2017-risingstack)
 
 * 书
     * [白帽子讲web安全](https://github.com/funfish/blog/issues/15)
