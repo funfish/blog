@@ -8,6 +8,7 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 源码
+    * [29. react 源码下一步](https://github.com/funfish/blog/issues/29)
     * [react 源码开始的那一步](https://github.com/funfish/blog/issues/28)
     * [immutable.js 数据结构](https://github.com/funfish/blog/issues/24)
     * [初识immutable](https://github.com/funfish/blog/issues/23)
