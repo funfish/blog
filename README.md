@@ -6,6 +6,7 @@
 目录
 
 * 源码
+    * [React Suspense data fetching 探究](https://github.com/funfish/blog/issues/34)
     * [react之Reconciliation](https://github.com/funfish/blog/issues/32)
     * [react 开启异步渲染与优先级](https://github.com/funfish/blog/issues/31)
     * [react 时间调度](https://github.com/funfish/blog/issues/30)
@@ -42,6 +43,7 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 其他
+    * [Decorator](https://github.com/funfish/blog/issues/33)
     * [HTTP 2 笔记](https://github.com/funfish/blog/issues/27)
     * [网络请求](https://github.com/funfish/blog/issues/26)
     * [三种常见算法](https://github.com/funfish/blog/issues/18)
