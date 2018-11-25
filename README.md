@@ -43,6 +43,7 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 其他
+    * [对布局和视频加载的想法](https://github.com/funfish/blog/issues/35)
     * [Decorator](https://github.com/funfish/blog/issues/33)
     * [HTTP 2 笔记](https://github.com/funfish/blog/issues/27)
     * [网络请求](https://github.com/funfish/blog/issues/26)
