@@ -1,0 +1,315 @@
+![](https://github.com/funfish/blog/raw/master/images/shaderGfx00.jpg)
+
+从元旦就开始学习 WebGL，只是网上的资料很少，没有相关的课程，three.js 还好一点，更多的是关于 OpenGL 的书。最后看了看有：[WebGL 技术储备指南](http://taobaofed.org/blog/2015/12/21/webgl-handbook/) 这篇介绍入门，网上首推资料 [Learn WebGL](http://learnwebgl.brown37.net/)，还有同人翻译的书 WebGL编程指南。
+
+一个月的时间看完了上述内容，Learn WebGL 后面几章觉得意义不大就没有继续学习了。只是学了，做了 demo 之后很是困惑，学的 WebGL 和工作关系有点难联系上，最低也要用 three.js，难道这就要上手 three.js 吗？直到后面发现了 [thebookofshaders](https://github.com/patriciogonzalezvivo/thebookofshaders)。之前学的基本都是以顶点着色器为主，对片元着色器的进一步介绍很少，而片元着色器和我的日常工作更加有关系。thebookofshaders 刚好有中文版，只是原文残缺，没有对 纹理/模拟/3D图形 的继续介绍。
+
+前面部分比较基础，也好理解，加上其他的 webgl 基础内容这里就不介绍了。下面介绍 生成设计 里面的部分内容及课后习题：
+
+### 技术
+沿着 thebookofshaders 里面的内容学习，会用到两个基本的库，同样的都是出自作者 Patricio Gonzalez Vivo：glslCanvas（加载 webgl 的通用库），glslEditor（实时渲染的辅助调试工具）。这些作者已经在电子资料里面用到了，平时只要在线修改代码调试就好了。
+
+## 随机 random
+这里介绍的随机，不是真正的随机，包括文中接下来的部分都是 **伪随机** ，意味着同样的输入，会有同样的输出，并且在 x 值附近具有 **连续性**。这是和以前用的 `Math.random` 的随机是不一样的。
+
+```glsl
+// 一维随机 
+float random (float x) {
+  return fract(sin(x) * 1e4);
+}
+
+// 2D 随机
+float random (vec2 st) {
+  return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+}
+```
+
+由上面代码就可以看出来，这是确定性随机。这样的随机要如何利用？关键是同样的输入会有同样的输出，于是，可以传入 x 的整数部分来随机分块。具体可以看以下联系：
+
+1. 做按行随机移动的单元（以相反方向）。只显示亮一些的单元。让各行的速度随时间变化
+![](https://github.com/funfish/blog/raw/master/images/shader10.1.PNG)
+
+```glsl
+#define TIMEPERIOD .2
+
+void main() {
+  vec2 st = gl_FragCoord.xy / u_resolution.xy;
+    
+  float speed = 0.;
+  float xRate = 0.;
+  float floorTimeRate = random(floor(u_time * TIMEPERIOD));
+  float fractTimeRate = fract(u_time * TIMEPERIOD);
+
+  if (st.y > 0.5) {
+    xRate = floorTimeRate * 50. + 10.;
+    speed = floorTimeRate * 2.+ 2.; 
+  } else {
+    xRate = -floorTimeRate * 50. + 60.;
+    speed = -floorTimeRate * 2. - 2.; 
+  }
+  st.x = st.x + fractTimeRate * speed;
+  
+  float floorX = random(floor(st.x * xRate)) * 4.;
+  float randomX = step(0.20, floorX);
+  vec3 color = vec3(randomX);
+
+  gl_FragColor = vec4(color,1.0);
+}
+```
+
+这里 xRate 代表黑线放大的倍数，speed 则是黑线的移动速度，其中速度和放大倍数要随着时间变化而变化，图中上下两部分要分开处理。
+
+2. 同样地，让某几行以不同的速度和方向。用鼠标位置关联显示单元的阀值。
+![](https://github.com/funfish/blog/raw/master/images/shader10.2.PNG)
+
+```glsl
+void main() {
+  vec2 st = gl_FragCoord.xy / u_resolution.xy;
+  st.x *= u_resolution.x / u_resolution.y;
+  float mouseX = u_mouse.x / u_resolution.x;
+  float thresholdX = 0.5 + mouseX / 2.;
+  
+  vec2 grid = vec2(100.0, 50.);
+  st *= grid;
+  
+  float positionX = (st.x - u_time * 60. * random(floor(st.y))) * random   (floor(st.y)) / 1.5;
+  float randomX = step(thresholdX, random(floor(positionX))) ;
+  vec2 fpos = fract(st);
+  
+  vec3 color = vec3(randomX);
+  
+  // Y轴的每一行产生白边
+  color *= step(0.2, fpos.y);
+  gl_FragColor = vec4(1.0 - color, 1.0);
+}
+```
+
+x 轴的黑色部分宽度思路和之前不一样，这里是通过 grid 放大整体的倍数，包括 y 轴的。最后以鼠标的 x 轴位置来改变 step 函数的阈值，实现交互。
+
+3. 创造其他有趣的效果：
+![](https://github.com/funfish/blog/raw/master/images/shader10.3.PNG)
+
+```glsl
+vec2 ipos = floor(st); 
+color *= step(st.x +  (50. - ipos.y) * 100., fract(u_time/50.) * 5100.);
+```
+
+这个图和上面 2 的图是很相似的，唯一不同的地方在于周期性从上到下显示，从左到右显示。需要从 x 、y  与时间一起考虑。
+
+## 噪音 noise
+上面的 random 更多的只是伪随机数，通过获取整数部分、小数部分来实现效果。图形的显示不是黑就是白，没有过渡，缺少平滑。
+这里的 noise 方程式，则使得 2D 的噪音平滑：
+```glsl
+float noise (in vec2 st) {
+  vec2 i = floor(st);
+  vec2 f = fract(st);
+
+  // Four corners in 2D of a tile
+  float a = random(i);
+  float b = random(i + vec2(1., 0.0));
+  float c = random(i + vec2(0., 1.0));
+  float d = random(i + vec2(1., 1.0));
+
+  // Smooth Interpolation
+
+  // Cubic Hermine Curve.  Same as SmoothStep()
+  vec2 u = f * f * (3. - 2. * f);
+  // u = smoothstep(0., 1., f);
+
+  // Mix 4 coorners percentages
+  return mix(a, b, u.x) +
+    (c - a)* u.y * (1. - u.x) +
+    (d - b) * u.x * u.y;
+}
+```
+
+生成式设计中的 noise 应用：上面提到的 noise 生成的图片更多的是块状模糊的，也被叫做 ***Value Noise***。下面提到了另外一种 ***Gradient Noise***。通过这个 [例子](https://www.shadertoy.com/view/XdXGW8) 而已看得出两者的区别。
+
+下面看看习题：
+1. 你还能做出什么其他图案呢？花岗岩？大理石？岩浆？水？找三种你感兴趣的材质，用 noise 加一些算法把它们做出来。
+![](https://github.com/funfish/blog/raw/master/images/shader11.1.PNG)
+
+```glsl
+float noise(vec2 st) {
+    vec2 i = floor(st);
+    vec2 f = fract(st);
+
+    vec2 u = f*f*(3.0-2.0*f);
+
+    return mix( mix( dot( random2(i + vec2(0.0,0.0) ), f - vec2(0.0,0.0) ),
+                     dot( random2(i + vec2(1.0,0.0) ), f - vec2(1.0,0.0) ), u.x),
+                mix( dot( random2(i + vec2(0.0,1.0) ), f - vec2(0.0,1.0) ),
+                     dot( random2(i + vec2(1.0,1.0) ), f - vec2(1.0,1.0) ), u.x), u.y);
+}
+
+void main() {
+  vec2 st = gl_FragCoord.xy / u_resolution.xy;
+  st.x *= u_resolution.x / u_resolution.y;
+  vec3 color = vec3(0.0);
+  color = vec3(1.) * smoothstep(.0, .2, noise(st * 4000000.));
+
+  gl_FragColor = vec4(1. - color, 1.0);
+}
+```
+
+这个图，是调试着调出来的，像格子衫的布料，一块一块的米格子，很好看。通过尽量放大倍数，来实现效果的。
+
+2. 用 noise 给一个形状变形。
+![](https://github.com/funfish/blog/raw/master/images/shader11.2.PNG)
+
+```glsl
+float shape(vec2 st, float radius) {
+	st = vec2(0.5) - st;
+  float dotDirection = length(st) * 2.0;
+
+  float newRadius = radius * (noise(st * u_time) + 1.);
+  
+  return 1. - smoothstep(newRadius, newRadius + 0.007, dotDirection);
+}
+
+void main() {
+	vec2 st = gl_FragCoord.xy/u_resolution.xy;
+	vec3 color = vec3(1.0) * shape(st,0.5);
+
+	gl_FragColor = vec4(color, 1.0 );
+}
+```
+
+这个是圆形的边界散点图。如何画圆，在之前章节里面有介绍过，中心点 (0.5, 0.5)，半径长度则是通过 newRadius 表示，传入的常数 redius，随着时间变化，通过 noise 处理，从而达到边界散点的效果。
+
+3， 把 noise 加到动作中会如何？回顾第八章。用移动 “+” 四处跑的那个例子，加一些 random 和 noise 进去。
+这个涉及到之前第八章画的十字架，最后的图如下：
+![](https://github.com/funfish/blog/raw/master/images/shader11.3.gif)
+
+```glsl
+float box(in vec2 _st, in vec2 _size){
+  _size = vec2(0.5) - _size * 0.5;
+  vec2 uv = smoothstep(_size, _size+vec2(0.001), _st);
+  uv *= smoothstep(_size, _size+vec2(0.001), vec2(1.0)-_st);
+  return uv.x*uv.y;
+}
+
+float cross(in vec2 _st, float _size){
+  return  box(_st, vec2(_size,_size/4.)) +
+          box(_st, vec2(_size/4.,_size));
+}
+void main(){
+  vec2 st = gl_FragCoord.xy/u_resolution.xy;
+  vec3 color = vec3(0.0);
+
+  st.x += noise(vec2(u_time, 0.)); 
+  st.y += noise(vec2(0., u_time));
+  color += vec3(cross(st,0.25));
+
+  gl_FragColor = vec4(color,1.0);
+}
+```
+
+将 st 的 x/y 值加上 noise 时间的效果，达到 “+” 四处跑的效果，而不是规律运动。
+
+### Simplex Noise
+前面的 Noise 实现方式过于复杂，对于 N 维你需要插入 2 的 n 次方个点，而 Simplex Noise 采用三角形来替换正方形，并把平滑函数改成四次 Hermite 函数，效果更平滑。
+
+习题： 做一个 shader 来表现流体的质感。比如像熔岩灯，墨水滴，水，等等。
+![](https://github.com/funfish/blog/raw/master/images/shader11.4.gif)
+
+```glsl
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                      -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289(i); // Avoid truncation effects in permutation
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+      + i.x + vec3(0.0, i1.x, 1.0 ));
+
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+  vec2 st = gl_FragCoord.xy / u_resolution.xy;
+  st.x *= u_resolution.x / u_resolution.y;
+  vec3 color = vec3(0.0);
+
+  st = st + st * snoise(st + u_time / 50.) / 3.;
+  color += smoothstep(.4 , 0.5, snoise(st * 5.));
+
+  gl_FragColor = vec4(1.-color,1.0);
+}
+```
+
+首先是先做出合适的泼墨图，这个在前文就有介绍到，采用的是 Gradient Noise 的方式，改造好后，则是加入时间变量，让 st 的坐标随着 snoise 下的时间变化。
+
+## 网格噪声 Cellular Noise 与 分形布朗运动 Fractal Brownian Motion
+GLSL 对 for 循环是不太友好，无法动态处理，当你有多个特征点的时候，若每个像素都计算一次到特征点的关系距离，其计算量也是很大的。为此，提出了 **网格噪音** 方式，即是：将空间分割成网状，每个像素点只计算其相邻块（一共八个）的特征点。
+
+分形布朗运动：则是在循环的过程中叠加噪音，并提高频率降低振幅，来显示更好的细节。如下面的方式
+
+```glsl
+#define OCTAVES 6
+float fbm (in vec2 st) {
+  // Initial values
+  float value = 0.0;
+  float amplitude = .5;
+  float frequency = 0.6;
+
+  // Loop of octaves
+  for (int i = 0; i < OCTAVES; i++) {
+    value += amplitude * noise(st);
+    st *= 2.;
+    amplitude *= .5;
+  }
+  return value;
+}
+```
+
+fbm 函数在循环的过程中，叠加噪音，让图形有更多的细节。
+
+域翘曲：通过 fbm 函数来扭曲 fbm，简单来讲就是多维的 fbm，通过下面来了解一下：
+```glsl
+// 基本方式 f(p) = fbm( p )
+float pattern( in vec2 p ) {
+  return fbm( p );
+}
+
+// 添加第二次翘曲 (p) = fbm( p + fbm( p ) )
+float pattern( in vec2 p ) {
+  vec2 q = vec2( fbm( p + vec2(0.0,0.0) ),
+                 fbm( p + vec2(5.2,1.3) ) );
+  return fbm( p + 4.0*q );
+}
+
+// 添加第三次翘曲 f(p) = fbm( p + fbm( p + fbm( p )) )
+float pattern( in vec2 p ) {
+  vec2 q = vec2( fbm( p + vec2(0.0,0.0) ),
+                 fbm( p + vec2(5.2,1.3) ) );
+
+  vec2 r = vec2( fbm( p + 4.0*q + vec2(1.7,9.2) ),
+                 fbm( p + 4.0*q + vec2(8.3,2.8) ) );
+
+  return fbm( p + 4.0*r );
+}
+```
+
+多次 fbm 之后生成类似 fbm 的纹理。比如下图：
+![](https://github.com/funfish/blog/raw/master/images/shader12.gif)
+
+## 总结
+片元着色器和顶点着色器的学习很不一样，前者需要对图形实现的熟悉，比如常见的方法函数，后者则是三维空间变化，涉及到更多矩阵数据。后面的学习，将继续牢固基础，看更多的教程，同时也要开始筹划 three.js 的学习了。

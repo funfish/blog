@@ -43,7 +43,8 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 其他
-    * [基于 next.js 的 Blog 上线了(https://github.com/funfish/blog/issues/36)
+    * [shader 习题与笔记](https://github.com/funfish/blog/issues/37)
+    * [基于 next.js 的 Blog 上线了](https://github.com/funfish/blog/issues/36)
     * [对布局和视频加载的想法](https://github.com/funfish/blog/issues/35)
     * [Decorator](https://github.com/funfish/blog/issues/33)
     * [HTTP 2 笔记](https://github.com/funfish/blog/issues/27)
