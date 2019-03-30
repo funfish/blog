@@ -1,7 +1,7 @@
 # 博客
 纸上得来终觉浅，绝知此事要躬行，望厚积薄发
 
-欢迎大家多多指点，另外求职中，希望团队技术好，坐标深圳。 
+欢迎大家多多指点，另外长期求职中，希望团队技术好，坐标深圳。 
 
 目录
 
@@ -43,6 +43,7 @@
     * [初识系列：nodejs之stream可读流](https://github.com/funfish/blog/issues/13)
 
 * 其他
+    * [视频优化(2) 与 ios 滑动bug研究](https://github.com/funfish/blog/issues/38)
     * [shader 习题与笔记](https://github.com/funfish/blog/issues/37)
     * [基于 next.js 的 Blog 上线了](https://github.com/funfish/blog/issues/36)
     * [对布局和视频加载的想法](https://github.com/funfish/blog/issues/35)
