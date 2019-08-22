@@ -48,6 +48,7 @@
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
   - [web 图像 - 一次分享](https://github.com/funfish/blog/issues/40)
   - [页面搭建工具盘点](https://github.com/funfish/blog/issues/39)
   - [视频优化(2) 与 ios 滑动 bug 研究](https://github.com/funfish/blog/issues/38)

@@ -1,0 +1,187 @@
+记得刚做前端，接手移动端 H5 的时候，特别想要将应用优化到极致，想要达到秒开，流畅接近原生的效果，只是业务需求下一直没有时间去做这样或者那样的优化。这次自己接手一个 hybrid H5 项目，做完业务之后，一直想要优化，刚好又是我一个人负责前端，于是将平时的想法收集起来，周六加班做了个深入的优化（可惜才过了四天，就被通知项目要移交到其他团队）。避免涉密，后面的数据，都做了稍微修改。
+
+## 初始问题
+
+这个项目是基于百度地图做了一个应用，开始存在两个问题，一个是首屏白屏问题；从点击进入到开始到有内容的阶段，有个明显白屏的时间，这个时间是包含 webview 初始化，以及首屏渲染的时间。该首屏渲染的时间，FP 的时间在 Fast 3G 下，大概为 9000+ ms。原本的系统，其实已经做了路由的懒加载了。另外一个百度地图渲染漂移问题。
+
+对于上面的问题，一共做了七层优化，尤其是首屏加载问题。
+
+## 百度地图
+
+用 vue-baidu-map 来作为 Vue 项目的百度地图组件。只是在移动端存在严重的问题，其覆盖物在移动端渲染性能差，稍微用手拖动一下百度地图，其上面的文字或者自定义的图形都会出现颤抖，而在 pc 端是没有这样的问题，官网的示例也是如此，只是采用覆盖物-点的方式，却能很好的避免颤抖的情况。
+
+若是直接采用百度地图的方式，而不是用 vue-baidu-map，其效果会好很多，不会有颤抖问题。只是想要试试新的 vue-baidu-map，而不是一直用老的方式。由于百度地图的代码没有开源出来，查看 vue-baidu-map 中的实现方式，也无特别收获， vue-baidu-map 只是做了一个 Vue 和百度地图的数据驱动的绑定而已，这给调试代码带来了很大的阻挠。后面为了方便调试， **采用 chrome 的 rendering 来调试代码，发现自定义覆盖物在拖动地图的时候，会反复变深绿色，而使用点覆盖物，只会时不时变深绿色**。点覆盖物性能确实要比自定义以及其他覆盖物要很多。后面改为点覆盖物，效果真的提高了不少。
+
+另外经过多次调试后发现高德地图真的要比百度地图好，有三维模式，而且 webview 支持好一些，只是定位没有百度地图准。
+
+## 首屏优化
+
+由于项目需要适配多语言，而之前的语言包，加起来有 1M+ 的大小，只是里面的冗余数据比较多，需要用到信息并没有那么多，于是采用 nodejs，对每个语言文件进行解析，输出对应的简化版本的 json 文件。nodejs 采用 walkdir 模块遍历所有语言包，并输出为简化版本文件。可以将包的体积减少到 3/5 的水平，并采用按需加载。
+
+### lottie 优化
+
+为了更好的还原动画采用的是 lottie + json 数据的方式，实现动效。只是设计最后给出来的一个动效 html 都要接近 300kb，这个是无法接受的，而且其实动画尺寸非常小，就是个简单 icon，采用 30 帧的序列帧体积也要 170kb，很大，而且设计为了统一管理，统一规范，推荐的还是采用 lottie 方案。后面在一篇腾讯 alloyteam 的文章里面有介绍到 lottie-web 仓库的 lottie_light.min.js 只用 140+kb，完整版的要 240+ kb，虽然只支持 svg，但是已经很够用了。
+
+再加上异步组件和懒加载 lottie_light.min.js 和对应的 json 数据，可以大大的减少首屏渲染压力
+
+```javascript
+// 异步组件方式
+components: {
+  LottieComponent: () => import("./LottieComponent");
+}
+// 懒加载Lottie文件
+const [lottie, lottieAnimationData] = await Promise.all([
+  import(/* webpackChunkName: "lottieLightMin" */ "./lottie_light.min"),
+  import(/* webpackChunkName: "lottieComponent" */ "./lottieComponentData")
+]);
+```
+
+使得 lottie + json 数据文件大小在接近 200kb 的水平，并达到了按需加载的目的。
+
+最后还想采用将 lottie 文件内置到客户端里面，请求的时候，拦截返回 lottie 文件给到前端就可以了，可惜客户端做的是小白。。。。
+
+### 图形压缩
+
+之前介绍过图像优化，该项目使用的图像有不是很多，通过有效压缩，可以减少 30% 的体积，只是需要注意的是有些首页的图像，在低于 10 kb 的时候，会被 Vue-cli3 打包进首页的 js 文件里面，导致文件臃肿，于是需要观察图片大小，以及配置对应的 vue.config 来达到最优解，本项目刚好是 10 kb， 附近有几个图像被打包进去了，修改 loader 对应的配置值就可以了。
+
+### prefetch 的问题
+
+通过 chrome 的 performance 调试的时候发现，首页加载的时候会同时记载其他文件，包括所有的语言包都加载进来了。只是不是做了按需加载的处理了吗？其实，vue-cli 3 对项目的默认处理是将需要加载的文件都加载上，另外按需加载的文件，会用 link 链接的方式，并设置为 prefetch 来获得，初衷是好的，prefetch 的资源优先级最低，不会和当前需要的 js 文件抢优先级。只是这样有个严重问题，由于浏览器在 http 1.1 下允许同时发送 6 ~ 8 个网络请求，于是当首页的 js 文件下载的同时，存在空闲连接，其他的 prefetch 请求也会被发送出去。导致了和首页 js 文件抢夺有限带宽的情况。
+
+根据这个情况需要修改 vue.config.js 中的配置，就可以了。
+
+```js
+config.plugins.delete("prefetch");
+```
+
+经过上面几步下来，首屏渲染时间 FP 时间已经缩短到 4000+ms 了。
+
+### 百度地图优化
+
+通过 performance 再次分析发现，在首页初始化的时候，会把百度地图也加载上去，只是初始过程并不会直接渲染百度地图，而是有个和服务端交互的过程，这个过程会消耗几秒钟，之后才会显示出百度地图，这样的话，其实百度地图是不用打包进入首页的 chunk 文件的，可以异步加载。只是按照官网的介绍，vue-baidu-map 需要作为插件在 Vue 里面使用。如下方式:
+
+```javascript
+import Vue from "vue";
+import BaiduMap from "vue-baidu-map";
+
+Vue.use(BaiduMap, {
+  ak: "YOUR_APP_KEY"
+});
+```
+
+这种方式 100%会将 vue-baidu-map 打包进首页的包里面。那如何避免呢？这个就要分析 Vue.use 里面的源码了。
+
+```javascript
+export function initUse(Vue: GlobalAPI) {
+  Vue.use = function(plugin: Function | Object) {
+    const installedPlugins =
+      this._installedPlugins || (this._installedPlugins = []);
+    if (installedPlugins.indexOf(plugin) > -1) {
+      return this;
+    }
+
+    // additional parameters
+    const args = toArray(arguments, 1);
+    args.unshift(this);
+    if (typeof plugin.install === "function") {
+      plugin.install.apply(plugin, args);
+    } else if (typeof plugin === "function") {
+      plugin.apply(null, args);
+    }
+    installedPlugins.push(plugin);
+    return this;
+  };
+}
+```
+
+不难发现 `Vue.use` 最后执行的是 `vue-baidu-map` 的 install 方法，并传入 Vue 以及后面的参数对象。于是回头看 install 方法
+
+```javascript
+install (Vue, options) {
+  const {ak} = options
+  Vue.prototype._BMap = () => ({ak})
+
+  Vue.component('baidu-map', BaiduMap)
+  Vue.component('bm-view', BmView)
+  // 省略其他的组件注释
+}
+
+// _BMap 使用方法
+const ak = this.ak || this._BMap().ak;
+```
+
+install 里面的主要功能一个是给 Vue 构造函数的原型传入 `_BMap` 方法，`_BMap` 会在 Map 组件初始化的时候使用。于是摆在面前的就有两个问题
+
+1. 能不能在组件里面使用 Vue.use 方法动态注册组件
+2. isntall 里面 Vue 构造函数问题：包括了 \_BMap 方法挂载，以及组件注册问题问题
+
+如果在组件里面引用 `Vue.use` 会发现此 Vue 非彼 Vue，即是引入的 Vue 和初始实例化的 Vue 的作用是有差别的，若使用同一个 Vue 函数，控制台又会提示其他问题。所以直接使用 `Vue.use` 在组件里面注册插件是不行的。那如果换成组件本身，用 `this.use` 呢，很可惜没有这个方法。这个时候可以看看 Vue 关于组件的源码：
+
+```javascript
+// _createElement 函数里面
+if (typeof tag === "string") {
+  // 省略部分代码
+  if (
+    (!data || !data.pre) &&
+    isDef((Ctor = resolveAsset(context.$options, "components", tag)))
+  ) {
+    // component
+    vnode = createComponent(Ctor, data, context, children, tag);
+  }
+}
+// createComponent 里面
+function createComponent(Ctor, data, context, children, tag) {
+  // 省略部分代码
+  if (isObject(Ctor)) {
+    Ctor = baseCtor.extend(Ctor);
+  }
+}
+// extend 方法
+Vue.extend = function(extendOptions) {
+  // 省略部分代码
+  const Super = this;
+  const Sub = function VueComponent(options) {
+    this._init(options);
+  };
+  Sub.prototype = Object.create(Super.prototype);
+  Sub.prototype.constructor = Sub;
+  // allow further extension/mixin/plugin usage
+  Sub.extend = Super.extend;
+  Sub.mixin = Super.mixin;
+  Sub.use = Super.use;
+};
+```
+
+可以发现 **组件的创建其实也是 Vue 的继承关系** ，所以如果想在组件里面用 use 方法的话，就是 `this.constructor.use` 了，只是方法是可以用了，但是传入 vue-baidu-map 的不是 Vue 构造函数本身，而是组件的构造函数，这个构
+造函数可以满足 `install` 方法里面的组件注册，调试一下，发现可以用~~只是其构造函数的 `prototype._BMap` 并不是 Vue 构造函数，完全不搭边，好在可以 vue-baidu-map 可以通过传递 `this.ak` 来解决问题；
+最后的动态插件实现如下：
+
+```javascript
+created() {
+  import('vue-baidu-map').then(BaiduMap => {
+    BaiduMap.install = BaiduMap.default.install;
+    this.constructor.use(BaiduMap);
+    this.baiduLoading = false;
+  })
+}
+```
+
+上面的方式就可以将百度地图三方库从首页中拆分来，最后首页必须加载文件大小总减少 108 kb 。将首屏 FP 时间压缩到 3000+ms，首屏文件 js 加载大小为 200+ kb 的样子。基本上在 4G 网络或者 wife 的情况下，就可以 1s 内刷新出来了。
+
+做到这一步差不多也就可以了，只是精益求精，还是想要提前 FP 时间。
+
+### 包体积优化再分析
+
+再回头看剩余的包体积，主要包含了 vue 的运行时，vue-router 、vue-i18n 和 core.js。这几个模块都是无法分离出来的，整体大小已经有 150kb 了。还有另外一个大的模块，主要包含业务代码、 axios 相关的模块和被转成 base64 的图片。这些模块也是分离不开来的呀。后面要如何优化好？
+
+### 暴力的 index.html
+
+想起之前看到的一篇文章，[Vue 项目骨架屏注入实践](https://juejin.im/post/5b79a2786fb9a01a18267362) 想要学着同样处理一下，但是并没有相应的数据可以用到。
+
+这个时候开始分析手头上的业务，初始记载后，会有一个请求服务器的过程，而服务需要多次轮询之后才有结果（服务端的性能太差了），等获取结果之后才会进入百度地图的页面，这就给了之前分离出百度地图包的契机了，反正百度地图不用立马加载。
+
+那要如何解决中间的白屏问题呢？4G 下也要接近 1s。**白屏时间为 webview 初始化，首页资源下载，vue 实例化，后面两者能不能都干掉呢？** 仔细盯着首页初始化的过程，从白屏到初始化，到服务端多次轮询拿到结果，这个过程中，前端页面是没有什么大的变化的，只有一个 `loading` 的图案。webview 初始化后，加载的是打包生成的 `index.html`，然后再去加载其他 js 资源后，再运行 vue，`index.html` 只是一个充满连接的 html。于是一个想法就起来了，在 index.html 里面直接渲染出 loading 的界面，等 vue 实例化结束了之后，再隐藏掉，不就可以完美过度了吗？压根就不用等待其他 js 资源下载和 Vue 实例化。
+
+于是很简单的，在根目录下，创建 `public/index.html`，并简单的用原生代码显示出 loading 界面，再调试一下，就完美了。
+
+堪称完美，只要加载一个 `index.html` 就够了，怕 2G 下也是秒开吧~~~
