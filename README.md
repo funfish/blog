@@ -48,6 +48,7 @@
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [sticky 以及 swiper](https://github.com/funfish/blog/issues/42)
   - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
   - [web 图像 - 一次分享](https://github.com/funfish/blog/issues/40)
   - [页面搭建工具盘点](https://github.com/funfish/blog/issues/39)
