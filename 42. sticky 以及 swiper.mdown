@@ -1,6 +1,7 @@
 最近为了新版官网，一直在学习 iphone 11 的效果图，结果越研究发现其复杂度实在远超想象，还要支持各种兼容问题。而我们这次的官网则是要向其学习，其中类似 apple 的翻页的布局是结构的重中之重。
 
-## sticky的翻页效果
+## sticky 的翻页效果
+
 苹果官网上采用的是 sticky 的效果，就是 `position: sticky` 这个属性的兼容性比较一般，基本只有现代浏览器都支持。只是 apple 都用了，其在 ie 等浏览器也做了兼容处理，那为什么我们不试一试翻页效果呢？
 
 没有找到合适的第三方库，于是采用自己摸索的方式，按照苹果的方式按葫芦画瓢，具体的结构大致如下
@@ -11,15 +12,8 @@
     <div class="sticky-inner"></div>
   </section>
 </main>
-.sticky-container {
-  margin-top: -100vh;
-  height: 200vh;
-}
-.sticky-inner {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-}
+.sticky-container { margin-top: -100vh; height: 200vh; } .sticky-inner {
+position: sticky; top: 0; height: 100vh; }
 ```
 
 每个模块翻页的模块都是一个 `sticky-container` 模块，并且通过 `margin-top` 往前上移一个屏幕的高度。内部模块再采用 `sticky` 的方式，使得上一个模块翻过的时候，下一个模块已经出现了，并且其内部模块牢牢的固定在顶部，达到翻页的效果。
@@ -27,18 +21,21 @@
 同时这个 `sticky` 的方案满足长模块的要求，普通模块高度为 `100vh`，当模块的内容较多，`100vh` 不够的时候可以扩展开。同时 H5 也可以采用这种方式。
 
 ### sticky 兼容效果
-ie 浏览器毫无意外是不支持的，考虑到2019年11月份 ie 浏览器的中国份额已经接近 0.8% 的水平，于是采用简单的兼容方式，将 `sticky` 统统改为普通布局。只是在移动端，本来以为兼容效果是最好的，`caniuse` 里面基本移动端都是没问题，没有想到现实中有各种问题：
+
+ie 浏览器毫无意外是不支持的，考虑到 2019 年 11 月份 ie 浏览器的中国份额已经接近 0.8% 的水平，于是采用简单的兼容方式，将 `sticky` 统统改为普通布局。只是在移动端，本来以为兼容效果是最好的，`caniuse` 里面基本移动端都是没问题，没有想到现实中有各种问题：
 
 oppo 浏览器最新版不支持 `sticky`，uc 浏览器对嵌套 `sticky` 支持效果非常差，会出现大块的白屏情况，chrome 浏览器是最好的。可以通过简单的判断 `$('.sticky-inner').css('position') === 'stikcy'` 或者是 `-webkit-stikcy` 来判断是否支持。而 uc 的嵌套问题只能通过修改代码结构来实现。只是 UC 浏览器对 `sticky` 的滑动效果不太好，底部边缘会出现颤抖的情况，通过 GPU 加速的方式也无法消除问题，最后考虑还是将 UC 浏览器同样降级为非支持 `sticky` 的模式。
 
 为了兼容非支持 `sticky` 模式的机型，特意查询了一下主流的代替方案，采用 `fixed` 和 `absolute` 来代替 `stikcy`，其中效果最好的要数 `stickybits` 和 `stickyfill` 这两个 `Polyfill` 方案了，但是其对长模块内容的 `sticky` 支持却不好。最后还是自己调试生成兼容版本。
 
 ### sticky 翻页
+
 `sticky` 已经可以很好的解决翻页问题了，奈何领导提出这样的翻页效果不符合要求，滚动或者滑动过程存在可以看到其他页的效果（难道苹果不是也有同样的问题？），于是在上线前两天临时改了方案，经过评估最好的方案是用 `swiper`，只是由于整个功能页改为 `swiper` 需要时间较多，于是折中使用 `sticky` 翻页时，自动整体往上滑动的效果。
 
 主要技术难点为页面定位问题，这个需要维护一个锚点位置的列表，在初始化和 `resize` 时候更新，而长模块内容的自动上划以及其自然翻滚要做区分处理，这个区分处理就很麻烦，需要耐心调试。而更加麻烦的是在 mac 下面表现很差，到处乱飞，以及 H5 的滑动也是乱飞的情况，需要一个个适配，于是在上线前一天理所当然的放弃了 H5 以及 mac 的效果，也好给领导交差。
 
 ### swiper 版本的翻页效果
+
 对于垂直翻页的效果，如果长模块内容复杂，可以下个定论，是不适合用 `swiper` 的，只能用 `sticky` 的方案，`swiper` 在长短屏切换时需要处理各种逻辑兼容问题，如果长模块内容复杂，则会增加复杂度。
 
 相比较于 `stikcy` 的翻页模式，`swiper` 的翻页需要自己搭建，其本身自带的切换效果只有 `fade` `cube` 这些模式。pc 端用到的是 `wheel` 滚动，在事件 `transitionStart` 触发的时候修改 `swiper` 动画就可以了。需要注意的是由于是翻页效果，所以每个页面都要绝对定位，并设置 `z-index`；由于长模块内容在 `wheel` 触发的时候，不能直接翻页，需要判断是不是长模块内容本身的滚动，于是要动态设置 `mousewheel.enabled`。
@@ -46,40 +43,44 @@ oppo 浏览器最新版不支持 `sticky`，uc 浏览器对嵌套 `sticky` 支�
 移动端则比 pc 端复杂不少，由于其翻页是触摸式翻页，需要在 `progress` 里面同步修改翻页的 `transform`，同时由于长模块问题，需要动态设置 `allowTouchMove`，类似 pc 端的 `mousewheel.enabled`；
 
 由于长模块的内容，存在 `fixed` 元素，而 `swiper` 的翻页效果为了达到顺滑，采用的 `transform` 动画，这样将导致长模块内的 `fixed` 失效。为此有两个方案可以实现：
+
 1. 将长模块内容高度限制在 100vh，支持 overflow-y: scroll；长模块内分为 fixed 元素和长高度的空元素，长高度元素起高度撑开作用；由于 fixed 元素存在交互，需要将长高度元素的 z-index 放在最底层，所以无法自然滚动该元素，故采用控制滚动。fixed 元素在上下翻动的时候改为 absolute 布局。
 2. 将 swiper 内的长模块的内容完全移出来，在 swiper 翻页的时候，单独控制其 transform，原本的 swiper 模块只做高度撑开作用，来配合控制滚动。
 
 这两个方案分别用在了 pc 端和移动端，最后效果看来是第二种好，`absolute` 和 `fixed` 布局还是有差异，会导致页面抖动，需要不断调试。第二个方式这是需要自己修改 swiper 翻页模式，将 `fixed` 的元素和对应 `swiper` 页面的翻动结合在一起。
 
 #### swiper 切换模式
+
 初步尝试切换，采用在 `fade` 模式和 `transform` 修改，但在移动端的 `progress` 事件里修改 `transform` 时候，页面的动画无法生效，一直是 `translate3d(0px, 0px, 0px)`，除非采用 `!important` 增加 `transform` 的权重，并且要写在 `css` 样式中，无法做到动态修改，于是一开始移动端使用的切换效果是基于 `top` 的，调试的时候效果符合要求，但是用真机调试，发现 `top` 的效果还是差强人意。
 
 后面立刻研究 `swiper` 的源码，从模式入手，发现其切换模式的添加，是采用 `swiper.use` 方法，该方法没有开放出来，有点类似 `Vue` 的模式。研究 `effect-fade.js` 文件可以发现下面代码：
+
 ```js
 // ... 省略部分代码
 const Fade = {
   setTranslate() {
     $slideEl
       .css({
-        opacity: slideOpacity,
+        opacity: slideOpacity
       })
       .transform(`translate3d(${tx}px, ${ty}px, 0px)`);
   }
-}
+};
 
 export default {
-  name: 'effect-fade',
+  name: "effect-fade",
   on: {
     setTranslate() {
       const swiper = this;
-      if (swiper.params.effect !== 'fade') return;
+      if (swiper.params.effect !== "fade") return;
       swiper.fadeEffect.setTranslate();
-    },
+    }
   }
-}
+};
 ```
 
 移动端每次滑动的时候，其 `transform` 值都会被重新修改，导致 `progress` 里面的修改无效。于是我就自定义一种模式 `slide-page`，其在滑动的时候，读取当前 `progress` 来修改 `transform`，只是需要注意的是不能仅仅对当前页面修改，需要对全体页面都重新设置，避免切换的时带来的问题，并且需要同步到 `fixed` 的元素。这样的模式也适用于 pc 端。
 
 ## 总结
+
 `sticky` 的优势是最明显的，功能完备，pc 端兼容良好。而 `swiper` 需要在长短模块之间切换，`mac` 下由于高度是不变，没有正常布局的格式，所以会触发橡皮胶效果，体验整体没有 `sticky` 好。另外上面的方案还有改进点：对于长模块内容，内部可以去掉长高度元素，每次长模块滑动滑动都触发一次状态修改就可以了，没有必要采用 `z-index` 为负的滚动。

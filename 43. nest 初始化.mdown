@@ -1,0 +1,606 @@
+春节呆在家里不能外出，假期又特别长，刚好在学习 nest，于是就看了一遍源码。nest 是用 typescript 写得，用法自然也是基于 typescript，其源码用 vscode 阅读非常方便，基本上是读过里面最流畅的了，只是一个初始化过程，其涉及的操作非常多，逻辑上还是需要捋一捋。直接用 nest 仓库代码阅读调试会发现调试的时候，部分代码引入采用类似下面的方式：
+
+```javascript
+// 在 core 目录下的 nest-application.ts
+import { Logger } from "@nestjs/common/services/logger.service";
+```
+
+其直接引用 `node_modules` 里面的模块，但是源码里面怎么可能有 `node_modules` ，不是应该直接用相对路径？
+
+nest 里面采用分包的形式打包，源码是 typescript 实现的，所以会将 packages 下面的模块通过编译生成普通 js 文件，于是为了方便调试，想到一个笨拙的办法，修改源代码的基础配置 `tsconfig.base.json`，这个配置是项目的基础 tsconfig，如下：
+
+```javascript
+{
+  // 添加如下配置
+  "paths": {
+    "@nestjs/*": ["../*"]
+  }
+}
+```
+
+所有 packages 下面的 tsconfig 都会扩展 `tsconfig.base.json`, 所以在基础文件里面配置路径别称，将 `@nestjs/*` 指向相对路径，就可以直接的智能交互引用的代码了，方便定位和阅读。
+
+ps: 修改配置的时候发现一个奇怪的 bug，修改扩展配置文件 tsconfig ，vscode 无法做到实时更新，需要重新初始化一次才可以，比如重启 vscode。
+
+## IOC 控制反转 依赖注入
+
+在开始源码前，需要了解一下 IOC 控制反转和依赖注入，nest 采用内置的 IOC 容器实现依赖注入的功能；关于控制反转和依赖注入可以看 [这里](https://www.zhihu.com/question/23277575)
+
+简单的来说，**程序只用负责使用依赖就好了，至于依赖如何被创建不用用户关心，交给第三方 IOC 容器来负责** 。这也是 nest 的特色依赖注入；而初始化的过程，则大部分都在创建这个 IOC 容器。
+
+依赖注入写法的主要部分如下：
+
+```typescript
+@Controller("api")
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+
+  @Post("login")
+  async login(@Request() req) {
+    const res = this.appService.findOne(req.name);
+    return res;
+  }
+}
+```
+
+这里面不需要知道 `appService` 实例是如何创建的，只是需要直接用就可以了，将变量通过参数的方式传入进来，而不是在 `constructor` 里面去实例该变量；
+
+## 容器初始化之扫描
+
+按照官方提供的例子，一般业务启动如下:
+
+```typescript
+async function bootstrap() {
+  const app = await NestFactory.create(ApplicationModule);
+  await app.listen(3000);
+}
+```
+
+`bootstrap` 分为创建应用和监听过程，其中创建应用主要是初始化依赖，而监听则主要是对中间件和路由进行初始化。
+
+```javascript
+public async create<T extends INestApplication = INestApplication>(
+  module: any,
+  serverOrOptions?: AbstractHttpAdapter | NestApplicationOptions,
+  options?: NestApplicationOptions,
+): Promise<T> {
+  // 设置 httpServer，即是 http 平台，默认采用 platform-express
+  let [httpServer, appOptions] = this.isHttpServer(serverOrOptions)
+    ? [serverOrOptions, options]
+    : [this.createHttpAdapter(), serverOrOptions];
+  // 创建全局应用配置，并根据该配置生成 container，该容器则是 IOC 容器载体；
+  const applicationConfig = new ApplicationConfig();
+  const container = new NestContainer(applicationConfig);
+
+  this.applyLogger(appOptions);
+  // this.initialize 初始化容器，赋予容器功能
+  await this.initialize(module, container, applicationConfig, httpServer);
+
+  const instance = new NestApplication(
+    container,
+    httpServer,
+    applicationConfig,
+    appOptions,
+  );
+  const target = this.createNestInstance(instance);
+  return this.createAdapterProxy<T>(target, httpServer);
+}
+
+private async initialize(
+  module: any,
+  container: NestContainer,
+  config = new ApplicationConfig(),
+  httpServer: HttpServer = null,
+) {
+  const instanceLoader = new InstanceLoader(container);
+  const dependenciesScanner = new DependenciesScanner(
+    container,
+    new MetadataScanner(),
+    config,
+  );
+  container.setHttpAdapter(httpServer);
+  try {
+    this.logger.log(MESSAGES.APPLICATION_START);
+    await ExceptionsZone.asyncRun(async () => {
+      await dependenciesScanner.scan(module);
+      await instanceLoader.createInstancesOfDependencies();
+      dependenciesScanner.applyApplicationProviders();
+    });
+  } catch (e) {
+    process.abort();
+  }
+}
+```
+
+创建的配置 `applicationConfig` 包含全局的 pipes/guards 等等，`create` 里面最主要是的 `init` 方法，该方法先生成加载器 `loader` 和依赖的 `Scanner`。初始化里面的 `dependenciesScanner.scan` 会做以下操作
+
+1. 注册核心模块 `InternalCoreModule`，该模块是容器的核心模块，对比提交记录可以发现，之前版本是没有核心模块，后面将 `applicationConfig` 里面非全局配置的功能集中到了 `InternalCoreModule`；
+2. 将核心模块和用户配置传入的模块进行一次 `scanForModules`，遍历所有的模块，并根据随机 uuid、名称、scope 以及其他信息创建 token，以该 token 为 key 最后 `set` 到容器里面；如果是同一模块，若 scope 不一样，其在容器中注册的模块也会不一样；
+3. scan 所有(用户与核心)模块的依赖
+
+```javascript
+public async scanModulesForDependencies() {
+  const modules = this.container.getModules();
+
+  for (const [token, { metatype }] of modules) {
+    await this.reflectImports(metatype, token, metatype.name);
+    this.reflectProviders(metatype, token);
+    this.reflectControllers(metatype, token);
+    this.reflectExports(metatype, token);
+  }
+  this.calculateModulesDistance(modules);
+}
+```
+
+前面添加模块后，则立刻对所有模块的依赖进行 scan，对导入模块/输出模块与当前模块进行关联，而 providers/controllers 处理比较特别，所有的依赖注入项会在 providers 里面找，而这些用户的 providers 添加则是在 `this.reflectProviders(metatype, token)` 里面进行的：
+
+```javascript
+public addProvider(provider: Provider): string {
+  if (this.isCustomProvider(provider)) {
+    return this.addCustomProvider(provider, this._providers);
+  }
+  this._providers.set(
+    (provider as Type<Injectable>).name,
+    new InstanceWrapper({
+      name: (provider as Type<Injectable>).name,
+      metatype: provider as Type<Injectable>,
+      instance: null,
+      isResolved: false,
+      scope: getClassScope(provider),
+      host: this,
+    }),
+  );
+  return (provider as Type<Injectable>).name;
+}
+```
+
+最终 providers 会生成一个 `InstanceWrapper` 实例，该实例下面的 `metatype` 指向原 provider 的类，而 instance 则是类的实例化，后面会提到。
+
+在遍历所有的 providers 和 controlers 的同时 nest 还会收集其添加的 guards/interceptors/exceptionFilters/pipes/routeArguments 这些修饰器到模块的 injectables 里面，给后面使用。（routeArguments 是 nest 提供的专门的路由信息修饰器）
+
+`this.calculateModulesDistance(modules)` 给已添加的模块计算其优先级，越晚加入的模块，优先级越低，比如导入的模块其优先级就要小于当前模块，这个优先级作用目前只在中间件里面看到，按照优先级排序注册中间件。
+
+## 容器初始化之实例化
+
+经过上面的铺垫相关的模块已经添加到 container 里面了，但是具体的依赖注入实现还在实例化，回到初始化里面 `await instanceLoader.createInstancesOfDependencies()`。
+
+实例化中先是处理原型，将原型上的方法扩展到 InstanceWrapper 实例里面（目前不知道有什么用。。。。。。可能只是单纯的扩展）。
+
+```javascript
+public async loadInstance<T>(
+  wrapper: InstanceWrapper<T>, collection: Map<string, InstanceWrapper>,
+  module: Module, contextId = STATIC_CONTEXT, inquirer?: InstanceWrapper,
+) {
+  // 省略前面部分代码
+  // instanceHost 则是前面InstanceWrapper下value
+  // 如果该InstanceWrapper已经resolved了，则不需要后面继续遍历寻找参数
+  if (instanceHost.isResolved) {
+    return done();
+  }
+  const callback = async (instances: unknown[]) => {
+    const properties = await this.resolveProperties(wrapper, module, inject,contextId, wrapper, inquirer);
+    const instance = await this.instantiateClass(instances, wrapper, targetWrapper, contextId, inquirer);
+    this.applyProperties(instance, properties);
+    done();
+  };
+  await this.resolveConstructorParams<T>(wrapper, module, inject, callback, contextId, wrapper, inquirer);
+}
+
+public async resolveConstructorParams<T>(
+  wrapper: InstanceWrapper<T>, module: Module, inject: InjectorDependency[],
+  callback: (args: unknown[]) => void, contextId = STATIC_CONTEXT,
+  inquirer?: InstanceWrapper, parentInquirer?: InstanceWrapper,
+) {
+  // 省略前面部分代码
+  const dependencies = isNil(inject) ? this.reflectConstructorParams(wrapper.metatype as Type<any>) : inject;
+  const optionalDependenciesIds = isNil(inject) ? this.reflectOptionalParams(wrapper.metatype as Type<any>) : [];
+
+  let isResolved = true;
+  const resolveParam = async (param: unknown, index: number) => {
+    try {
+      if (this.isInquirer(param, parentInquirer)) {
+        return parentInquirer && parentInquirer.instance;
+      }
+      const paramWrapper = await this.resolveSingleParam<T>(wrapper, param, { index, dependencies }, module,
+        contextId, inquirer, index);
+      const instanceHost = paramWrapper.getInstanceByContextId(contextId, inquirerId);
+      if (!instanceHost.isResolved && !paramWrapper.forwardRef) {
+        isResolved = false;
+      }
+      return instanceHost && instanceHost.instance;
+    } catch (err) {
+      const isOptional = optionalDependenciesIds.includes(index);
+      if (!isOptional) {
+        throw err;
+      }
+      return undefined;
+    }
+  };
+  // 最后得到需要注入的实例
+  const instances = await Promise.all(dependencies.map(resolveParam));
+  isResolved && (await callback(instances));
+}
+```
+
+实例过程中会遍历模块下的所有 providers/injectables/controllers，最后依次完成实例化，实例化通用方法为 `loadInstance`。可以看到通过解析参数的方式来获取依赖 `dependencies`，然后解析依赖，通过 `resolveSingleParam` 获得对应 `provider`，再进入 `callback` 回调。
+
+只是具体如何解析依赖？在 `resolveConstructorParams` 方法里面，通过 `reflectConstructorParams` 可以拿到参数，比如
+
+```typescript
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+}
+```
+
+这里的 `appService` 参数，就是通过 `reflectConstructorParams` 获得的，先知道需要哪些依赖才能注入，只是如何知道有那些参数呢？这里的实现卡了很两天才明白， 因为 `reflectConstructorParams` 实现很简单：
+
+```javascript
+public reflectConstructorParams<T>(type: Type<T>): any[] {
+  const paramtypes = Reflect.getMetadata(PARAMTYPES_METADATA, type) || [];
+  // 省略部分代码
+  return paramtypes;
+}
+export function Injectable(options?: InjectableOptions): ClassDecorator {
+  return (target: object) => {
+    Reflect.defineMetadata(SCOPE_OPTIONS_METADATA, options, target);
+  };
+}
+```
+
+通过获取 `'design:paramtypes'` 的元数据就可以获得参数了，只是代码里面并没有用相关的修饰器，将参数传进去，官方文档提到：
+
+> A provider is simply a class annotated with an @Injectable() decorator
+
+只是 `Injectable` 修饰器的实现明显不是提供 `'design:paramtypes'` 元数据，甚至 `@Injectable()` 里面什么数据都没有传递。于是这里就陷入了僵局，按照官方意思是只要用了 `@Injectable()` 就可以。测试的时候，将 `@Injectable()` 去掉发现依赖不能注入了，编译后的代码则是：
+
+```javascript
+AppController = __decorate(
+  [
+    common_1.Controller("api"),
+    __metadata("design:paramtypes", [app_service_1.AppService])
+  ],
+  AppController
+);
+```
+
+明明没有用到 `'design:paramtypes'` 相关的修饰器，结果编译出来的代码就是有的。。。。。。实在很奇怪。直到谷歌 `'design:paramtypes'` 的时候发现，原来这个 typescript 搞的鬼
+
+> When you enable metadata through the "emitDecoratorMetadata" property, the TypeScript compiler will generate the following metadata properties:
+> 'design:type', 'design:paramtypes' and 'design:returntype'.
+
+嗯，**依赖注入里面，typescript 已经帮你把参数给拎出来了，直接访问元数据，key 为 `'design:paramtypes'` 就可以了。**
+
+回到之前，获取到参数的类，但是距离可用还差很远，需要获取参数对应的 provider 的 InstanceWrapper，获取到 InstanceWrapper 之后也不能直接用，如果该 InstanceWrapper 没有被 resolved 过，则需要递归继续加载该 provider 的 `loadInstance` 方法。`resolveConstructorParams` 方法下最后的 instances 则是需要注入的实例了，而不是 `null`，因此需要递归，就是将底层的类实例好后传入上级作为参数，直到顶端。
+
+类如何被实例？实例的过程发生在 `const instance = await this.instantiateClass(instances, wrapper, targetWrapper, contextId, inquirer)` 里面，这里的 instances 参数是需要注入的实例，而这些实例也同样来自于 `instantiateClass` 方法:
+
+```javascript
+public async instantiateClass<T = any>(
+  instances: any[],
+  wrapper: InstanceWrapper,
+  targetMetatype: InstanceWrapper,
+  contextId = STATIC_CONTEXT,
+  inquirer?: InstanceWrapper,
+) {
+  // 省略部分代码
+  const instanceHost = targetMetatype.getInstanceByContextId(
+    contextId,
+    inquirerId,
+  );
+  if (isNil(inject) && isInContext) {
+    instanceHost.instance = wrapper.forwardRef
+      ? Object.assign(
+          instanceHost.instance,
+          new (metatype as Type<any>)(...instances),
+        )
+      : new (metatype as Type<any>)(...instances);
+  } else if (isInContext) {
+    const factoryReturnValue = ((targetMetatype.metatype as any) as Function)(
+      ...instances,
+    );
+    instanceHost.instance = await factoryReturnValue;
+  }
+  instanceHost.isResolved = true;
+  return instanceHost.instance;
+}
+```
+
+可以看到通过 new 的形式生成新的实例赋值到 `InstanceWrapper` 的 `instance`，并将 isResolved 设置为 `true`，表示后面不再递归该 `provider` 了。由此可见这个 isResolved 很重要，在添加 `providers` 的时候，也会根据 `provider` 类型来修改 isResolved，如果是 Custom providers，则有可能 isResolved 一开始就是 `true`；
+
+## 应用初始化之中间件
+
+上面的 IOC 控制容器初始化好了之后，会进入业务主程序的下一步 `await app.listen(3000)`。
+
+```typescript
+public async init() {
+  const useBodyParser =
+    this.appOptions && this.appOptions.bodyParser !== false;
+  // 注册 platform-express 的中间件，就是bodyParser.json和bodyParser.urlencoded
+  useBodyParser && this.registerParserMiddleware();
+  // registerModules 注册websocket模块和微服务模块，
+  await this.registerModules();
+  await this.registerRouter();
+  await this.callInitHook();
+  await this.registerRouterHooks();
+  await this.callBootstrapHook();
+
+  this.isInitialized = true;
+  this.logger.log(MESSAGES.APPLICATION_READY);
+  return this;
+}
+```
+
+先是注册常规的解析中间件，后面的 `registerModules` 里面会注册上用户自定义的中间件，常见的中间件用法如下
+
+```javascript
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes(AppController);
+  }
+}
+
+@Injectable()
+export class LoggerMiddleware implements NestMiddleware {
+  use(req, res, next: Function) {
+    console.log("Request...");
+    next();
+  }
+}
+```
+
+可以看到应用方需要显式的使用 `configure` 才能使用该中间件，因为源码里面是采用 `await instance.configure(middlewareBuilder)` 的方法。而 `config` 正如字面意思配置中间件，只是起到给入口的作用，更多的是让后面 `apply` 和 `forRoutes` 方法，结合起来能够将中间件与路由挂勾上，尤其是 `forRoutes`，**若不用上 `forRoutes` 定义路由，则模块下的中间件不会注册上。**
+
+```javascript
+public forRoutes(
+  ...routes: Array<string | Type<any> | RouteInfo>
+): MiddlewareConsumer {
+  const { middlewareCollection, routesMapper } = this.builder;
+
+  const forRoutes = this.mapRoutesToFlatList(
+    routes.map(route => routesMapper.mapRouteToRouteInfo(route)),
+  );
+  const configuration = {
+    middleware: filterMiddleware(this.middleware),
+    forRoutes: forRoutes.filter(route => !this.isRouteExcluded(route)),
+  };
+  middlewareCollection.add(configuration);
+  return this.builder;
+}
+```
+
+这里传入的路由配置会被 `mapRouteToRouteInfo` 解析，传入的可以是简单的路由地址字符串，也可以是路由集合，更可以是对应的 `controller` 类。接着前面配置的 `LoggerMiddleware` 会和路由信息一起被添加到中间件集合里面，最后存入 `middlewareModule`， key 则是模块的 token 信息。
+
+## 应用初始化之路由
+
+中间件添加完之后就是添加路由信息，相比较于 express 之类的，nest 采用方式既不是统一的路由配置，也不是约定目录的路由，而是采用和 spring 一样的注解来定义路由。对应源码入口处理部分如下：
+
+```javascript
+public resolve<T extends HttpServer>(applicationRef: T, basePath: string) {
+  const modules = this.container.getModules();
+  modules.forEach(({ controllers, metatype }, moduleName) => {
+    let path = metatype
+      ? Reflect.getMetadata(MODULE_PATH, metatype)
+      : undefined;
+    path = path ? basePath + path : basePath;
+    // 遍历模块，注册每个模块下的controllers集合
+    this.registerRouters(controllers, moduleName, path, applicationRef);
+  });
+}
+private applyCallbackToRouter<T extends HttpServer>(
+  router: T,
+  pathProperties: RoutePathProperties,
+  instanceWrapper: InstanceWrapper,
+  moduleKey: string,
+  basePath: string,
+) {
+  const { path: paths, requestMethod, targetCallback, methodName } = pathProperties;
+  const { instance } = instanceWrapper;
+  const routerMethod = this.routerMethodFactory
+    .get(router, requestMethod)
+    .bind(router);
+
+  const stripSlash = (str: string) =>
+    str[str.length - 1] === '/' ? str.slice(0, str.length - 1) : str;
+
+  const isRequestScoped = !instanceWrapper.isDependencyTreeStatic();
+  const proxy = isRequestScoped
+    ? this.createRequestScopedHandler(instanceWrapper, requestMethod, this.container.getModuleByKey(moduleKey),
+        moduleKey, methodName)
+    : this.createCallbackProxy(instance, targetCallback, methodName, moduleKey, requestMethod);
+
+  paths.forEach(path => {
+    const fullPath = stripSlash(basePath) + path;
+    routerMethod(stripSlash(fullPath) || '/', proxy);
+  });
+}
+```
+
+第一个 `resolve` 方法简单的遍历，加上 `registerRouters` 在对单个 `controller` 遍历，可以获得所有的路由信息，而第二个 `applyCallbackToRouter` 则是路由的重点，`routerMethod` 是 `platform-express` 请求通用方法，比如：post/get 之类，可以通过它建立路由，相应的第一个参数 `stripSlash(fullPath) || '/'` 是路由的访问路径，而第二个参数 `proxy` 则是路由处理回调。`proxy` 创建则涉及到非常多的内容：
+
+整体的 `proxy` 会通过 `create` 创建新的路由实例，该实例会先获取信息 `getMetadata`。可以直接先看看该方法，再回到 `create` :
+
+```javascript
+public getMetadata(
+  instance: Controller,callback: (...args: any[]) => any,
+  methodName: string, module: string, requestMethod: RequestMethod,
+): HandlerMetadata {
+  const cacheMetadata = this.handlerMetadataStorage.get(instance, methodName);
+  if (cacheMetadata) {
+    return cacheMetadata;
+  }
+  // 路由传参信息
+  const metadata =
+    this.contextUtils.reflectCallbackMetadata(instance, methodName, ROUTE_ARGS_METADATA) || {};
+  const keys = Object.keys(metadata);
+  const argsLength = this.contextUtils.getArgumentsLength(keys, metadata);
+  const paramtypes = this.contextUtils.reflectCallbackParamtypes(instance, methodName);
+  const getParamsMetadata = (moduleKey: string, contextId = STATIC_CONTEXT, inquirerId?: string,
+  ) => this.exchangeKeysForValues(keys, metadata, moduleKey, contextId, inquirerId);
+
+  const paramsMetadata = getParamsMetadata(module);
+  // 路由信息里面，如果是 @Response 或者 @Next 则为 true
+  const isResponseHandled = paramsMetadata.some(({ type }) =>
+    type === RouteParamtypes.RESPONSE || type === RouteParamtypes.NEXT);
+  // 有无重定向修饰器 如@Redirect
+  const httpRedirectResponse = this.reflectRedirect(callback);
+  // 有无渲染修饰器 如@Render('index')
+  const fnHandleResponse = this.createHandleResponseFn(callback, isResponseHandled, httpRedirectResponse);
+  // post 响应默认状态码是 201，其他方式都是 200 ，可以通过 @HttpCode 来修改状态码
+  const httpCode = this.reflectHttpStatusCode(callback);
+  const httpStatusCode = httpCode ? httpCode : this.responseController.getStatusByMethod(requestMethod);
+  // 如@Header('Cache-Control', 'none') 修改响应头
+  const responseHeaders = this.reflectResponseHeaders(callback);
+  const hasCustomHeaders = !isEmpty(responseHeaders);
+  const handlerMetadata: HandlerMetadata = {
+    argsLength, fnHandleResponse, paramtypes, getParamsMetadata,
+    httpStatusCode, hasCustomHeaders, responseHeaders,
+  };
+  this.handlerMetadataStorage.set(instance, methodName, handlerMetadata);
+  return handlerMetadata;
+}
+```
+
+对于 `Controller` 其通常会采用一系列的修饰器，比如在其参数里面，添加 `@Request() req`。生成路由的时候也需要把这些信息提取出来，这些修饰器配置的元数据 key 是 `ROUTE_ARGS_METADATA`，value 则是代码中的 `metadata`。`reflectCallbackParamtypes` 方法和前文提到的获取依赖方式一样，采用 `'design:paramtypes'` 获取 `controller` 方法的形参。其他的基本上都是获取类或方法上修饰器的信息。还有个重要功能，是否响应需要模板渲染，比如渲染 html 页面，这个时候则可以用到 `@Render('index')`，可以看官方[文档](https://docs.nestjs.com/techniques/mvc#template-rendering)，需要注意的是 html 文件需要保存在 views 目录。
+
+再回到创建路由 `proxy` 的入口 `create`：
+
+```javascript
+public create(
+  instance: Controller, callback: (...args: any[]) => any, methodName: string,
+  module: string, requestMethod: RequestMethod, contextId = STATIC_CONTEXT, inquirerId?: string,
+) {
+  // 上面提到的获取contorller下路由对应方法的信息，如参数/请求头等等
+  const { argsLength, fnHandleResponse, paramtypes,
+    getParamsMetadata, httpStatusCode, responseHeaders, hasCustomHeaders,
+  } = this.getMetadata(instance, callback, methodName, module, requestMethod);
+
+  const paramsOptions = this.contextUtils.mergeParamsMetatypes(
+    getParamsMetadata(module, contextId, inquirerId), paramtypes);
+  const contextType: ContextType = 'http';
+  // 提取模块中的 pipes/guards/interceptors
+  const pipes = this.pipesContextCreator.create(instance, callback, module, contextId, inquirerId);
+  const guards = this.guardsContextCreator.create(instance, callback, module, contextId, inquirerId);
+  const interceptors = this.interceptorsContextCreator.create(instance, callback, module, contextId, inquirerId);
+
+  const fnCanActivate = this.createGuardsFn(guards, instance, callback, contextType);
+  const fnApplyPipes = this.createPipesFn(pipes, paramsOptions);
+
+  const handler = <TRequest, TResponse>(args: any[], req: TRequest, res: TResponse,
+    next: Function) => async () => {
+    fnApplyPipes && (await fnApplyPipes(args, req, res, next));
+    return callback.apply(instance, args);
+  };
+
+  return async <TRequest, TResponse>(req: TRequest, res: TResponse, next: Function) => {
+    const args = this.contextUtils.createNullArray(argsLength);
+    fnCanActivate && (await fnCanActivate([req, res, next]));
+
+    this.responseController.setStatus(res, httpStatusCode);
+    hasCustomHeaders &&
+      this.responseController.setHeaders(res, responseHeaders);
+
+    const result = await this.interceptorsConsumer.intercept(interceptors, [req, res, next],
+      instance, callback, handler(args, req, res, next), contextType);
+    await fnHandleResponse(result, res);
+  };
+}
+```
+
+上面 `create` 返回则是路由响应的处理方式了。可以看到前面部分的 `pipes/guards/interceptors`，是根据全局、`controller`以及其下面的 `method` 的修饰器获取对应的名称，再从模块的 `injectables` 获取对应的 `InstanceWrapper`，从而得到的数组。其后面还有对应的处理方法 `fnCanActivate` 和 `fnApplyPipes`，从代码上可以看到，路由响应里面先是执行 `fnCanActivate` 也就是守卫，后面设置响应，然后是 `interceptors`，最后是 `fnApplyPipes`，这里以 `fnCanActivate` 为例子，看看其实现：
+
+```javascript
+public createGuardsFn(guards: any[], instance: Controller, callback: (...args: any[]) => any,
+  contextType?: TContext): (args: any[]) => Promise<void> | null {
+  const canActivateFn = async (args: any[]) => {
+    const canActivate = await this.guardsConsumer.tryActivate<TContext>(
+      guards, args, instance, callback, contextType,
+    );
+    if (!canActivate) {
+      throw new ForbiddenException(FORBIDDEN_MESSAGE);
+    }
+  };
+  return guards.length ? canActivateFn : null;
+}
+public async tryActivate(
+  guards: CanActivate[], args: any[], instance: Controller,
+  callback: (...args: any[]) => any, type?: TContext,
+) {
+  if (!guards || isEmpty(guards)) {
+    return true;
+  }
+  const context = this.createContext(args, instance, callback);
+  context.setType<TContext>(type);
+
+  for (const guard of guards) {
+    const result = guard.canActivate(context);
+    if (await this.pickResult(result)) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+```
+
+上面可以看到，`guard` 是通过调用 `canActivate` 来实现，如果没有实现该方法，则会抛出报错 `new ForbiddenException(FORBIDDEN_MESSAGE)`，后面的代码也就不执行了。最后路由代理具体业务的执行，则是在 `create` 提到的 `handler` 里面执行。
+
+这里回过头看一下，前面代码可以发现 `getMetadata` 里面生成的 `getParamsMetadata`，会用在 `create` 的 `createPipesFn` 方法里面用到：
+
+```javascript
+public createPipesFn(
+  pipes: PipeTransform[],
+  paramsOptions: (ParamProperties & { metatype?: any })[],
+) {
+  const pipesFn = async <TRequest, TResponse>(args: any[], req: TRequest,
+    res: TResponse, next: Function,
+  ) => {
+    const resolveParamValue = async (
+      param: ParamProperties & { metatype?: any },
+    ) => {
+      // index 为参数序号，表示第几个参数
+      // type 为修饰器类型，如 @Request
+      const { index, extractValue, type, data, metatype, pipes: paramPipes } = param;
+      const value = extractValue(req, res, next);
+
+      args[index] = this.isPipeable(type)
+        ? await this.getParamValue(
+            value,
+            { metatype, type, data } as any,
+            pipes.concat(paramPipes),
+          )
+        : value;
+    };
+    await Promise.all(paramsOptions.map(resolveParamValue));
+  };
+  return paramsOptions.length ? pipesFn : null;
+}
+```
+
+可以发现 `createPipesFn` 方法里面只是返回一个 `pipesFn`，**这个 `pipesFn` 作用在于生成参数 `args`，而这个 `args` 是从路由处理代理里面传过来，`const args = this.contextUtils.createNullArray(argsLength)` 是个空数组!**，由于引用对象的特性，该空数组将会在 `createPipesFn` 实现参数回填，最后再 `callback` 也就是对应路由执行 method 里面传递 `args` 作为参数进去。
+
+打比方如 `async login(@Request() req) {}` 参数 `req` 会在 `createPipesFn` 里面根据修饰器类型返回 `req` 对象，并被赋值到 `args` 数组的第一个元素里面，最后这个 `args` 则会成为 `login` 方法的传参。从而通过 `pipe` 的方式实现参数的传递。
+
+当然 `pipe` 的作用不止如此，具体的大家可以探索一下；
+
+## 应用初始化之其他
+
+上面介绍了路由如何通过 `platform-express` 生成，还有一点其他的内容，回到 `init` 方法：
+
+```javascript
+await this.callInitHook();
+await this.registerRouterHooks();
+await this.callBootstrapHook();
+
+this.isInitialized = true;
+this.logger.log(MESSAGES.APPLICATION_READY);
+```
+
+上面分别调用的是 nest 自定义的生命周期钩子，`onModuleInit/onApplicationBootstrap` 这两个钩子，而 `registerRouterHooks` 则是给路由添加无路由处理和异常处理；
+
+## 总结
+
+开始用 nest 写业务的时候，还是懵懵懂懂的，一知半解，好奇这些修饰器是如何用的，为什么 `@Request` 可以这么用，和使用多年的 Vue/React 甚至 egg 风格截然不同，看了源码之后有种豁然开朗的感觉，而且 typescript 阅读源码很方便，让生锈的脑袋不怎么费力的就读下来了，只是中间的跳转实在有点啰嗦，可能这就是面向对象的特点吧。
+
+关于 nest 还有不少地方没有介绍到，这里主要介绍的是初始化过程，包括容器初始化和应用初始化。**容器的初始化是获取所有的依赖项，形成一个 IOC 容器，并实例化依赖，也包含 `controller`。应用初始化则是中间件、微服务模块、websoket 模块的注册和路由的生成，而这些的前提也是 IOC 容器。**
+
+希望 2020，疫情好转，国运昌盛；
