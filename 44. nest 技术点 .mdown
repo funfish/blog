@@ -1,0 +1,272 @@
+[上文](https://github.com/funfish/blog/blob/master/43.%20nest%20%E5%88%9D%E5%A7%8B%E5%8C%96.mdown)提到的初始化，还是有不少纰漏的地方，而且只是粗糙的介绍了初始化的过程，还有很多细节点没有介绍到。下面着重介绍一下：
+
+## 循环引用
+
+一般使用的时候是不推荐循环引用的，只是有的时候，需要用到循环引用，那要如何处理呢？按照官方介绍的是 `forwardRef` 函数来表示引用关系，比如 `@Inject(forwardRef(() => CatsService))` 这样的方式。循环引用，包含正向引用和模块的引用，这里介绍一下正向引用，也就是依赖引用。
+
+前文初始化中提到：**`resolveSingleParam` 通过迭代获取了需要注入的依赖，需要传入的依赖通过 `instances` 传入到 `callback`，再在 `callback`中完成该 `provider` 的实例化，从而完成初始化**。在循环引用里面，也是要通过 `resolveSingleParam` 来解决循环问题。而该方法下面，有两个功能：
+
+```javascript
+public resolveParamToken<T>(
+  wrapper: InstanceWrapper<T>,
+  param: Type<any> | string | symbol | any,
+) {
+  if (!param.forwardRef) {
+    return param;
+  }
+  wrapper.forwardRef = true;
+  return param.forwardRef();
+}
+
+public async resolveComponentHost<T>(
+  module: Module,
+  instanceWrapper: InstanceWrapper<T>,
+  contextId = STATIC_CONTEXT,
+  inquirer?: InstanceWrapper,
+): Promise<InstanceWrapper> {
+  const inquirerId = this.getInquirerId(inquirer);
+  const instanceHost = instanceWrapper.getInstanceByContextId(contextId, inquirerId);
+  if (!instanceHost.isResolved && !instanceWrapper.forwardRef) {
+    // 正常过程
+    await this.loadProvider(instanceWrapper, module, contextId, inquirer);
+  } else if (
+    // 循环引用
+    !instanceHost.isResolved &&
+    instanceWrapper.forwardRef &&
+    (contextId !== STATIC_CONTEXT || !!inquirerId)
+  ) {
+    instanceHost.donePromise &&
+      instanceHost.donePromise.then(() => this.loadProvider(instanceWrapper, module, contextId, inquirer));
+  }
+  // 省略部分代码
+  return instanceWrapper;
+}
+```
+
+可以看到 `resolveParamToken` 里面由于存在 `formward` 的关系，InstanceWrapper 的 `forwardRef` 属性被设置为 `true`，并且拿到了 `@Inject(forwardRef(() => CatsService))` 里面 `CatsService` 这个类。后面通过这个类名，找到对应的 instanceWrapper，并到达 `resolveComponentHost` 方法。在该方法的条件里面循环引用会走到 `donePromise`。只是这里第一个问题，前面提到的传入 `resolveComponentHost` 的 instanceWrapper 是注入项 `CatsService`，而引用方的 wrapper 设置了 `forwardRef` 的，但是注入项 `CatsService` 并没有，所以不可能到循环里面的。那这是为什么呢？
+
+在 debug 的时候就发现代码执行一直是跳来跳去的，并不是阅读顺序上的从上到下。这是由于采用了多个 map 结构，比如下面的：
+
+```javascript
+private async createInstancesOfProviders(module: Module) {
+  const { providers } = module;
+  await Promise.all(
+    [...providers.values()].map(async wrapper =>
+      this.injector.loadProvider(wrapper, module),
+    ),
+  );
+}
+```
+
+对于 `Promise.all` 会遍历其下面的所有异步事件，只是里面的执行顺序是如何的呢？**如果遇到异步里面有异步如何处理？** 对于第一个异步事件，会执行里面的同步语句，直到遇到第一个 `await` 语句，会执行其里面的同步语句，**若遇到 `await`再执行里面的同步部分，直到返回非异步语句，并开始执行 `Promise.all` 下的第二个异步语句，按这样的逻辑依次循环**
+
+回到前面，在 `resolveParamToken` 之后，由于异步返回的问题，会先执行其他遍历的异步语句到 `resolveParamToken` 之后，于是 `CatsService` 的 instanceWrapper 也被设置了 `forwardRef`。
+
+进入 `donePromise.then` 操作，要执行 `then` 需要有 `resolve` 的过程，但是 `resolve` 在 `callback` 里面执行，而随后则马上返回 `CatsService` 的 instanceWrapper。按照前文介绍的，依赖的注入，是不断的迭代传入实例的，但是这里本来是需要继续迭代的，现在进入了 Promise 里面，传递链被中断，要如何返回含有实例的 instanceWrapper ？这也是可以由上面的 `Promise.all` 的问题来解答，在一个遍历里面出现中断，执行 `Promise.all` 的下一个异步，从而使得对象 `instanceWrapper.instance` 能够异步的添加上实例。
+
+后面遍历的时候已经获取到 `CatsService` 的实例了，在 `callback` 里面 `resolve` 的时候，则会回到前面的 `donePromise.then` 从而继续加载实例，由于存在 `isResolved`，这里就有第二个问题了，既然遍历的过程中已经创建实例了，为什么还有继续 `donePromise.then` 的过程呢？这里有个猜测：可能避免循环漏掉了的问题吧，只是具体用途也没有想出来。
+
+除了正向引用，还有模块引用，也和正向引用有点类似，依赖于 `forwardRef` 写法。模块引用里面，采用的是缓存判断，如果缓存里面有该模块，则不会继续当前遍历。
+
+typescript 在编译循环引用的参数时候，参数会被转为 undefined，是无法识别的。正向引用需要 `inject` 修饰器来添加额外的参数，来覆盖参数的 undefined，同样的模块引用也需要 `forwardRef` 来表示非直接循环，从而可以编译出正确的参数。（至于为什么 typescript 无法编译出循环参数，我就不晓得了。。。。）
+
+## 注入作用域
+
+这里虽然翻译是叫做注入作用域，但是，感觉更多的是**隔离**的作用。前文提到的依赖注入，有个特点，就是由**依赖生成的实例，会被所有引用方共享。** 这在大部分时候是没有问题的，只是有时可能有特别的需求，比如需要用到依赖生成实例的静态变量，导致依赖生成的实例共享就会被相互污染。于是就有了注入作用域的概念，字面理解：注入的依赖有自己的作用域，而不会在所有需要的类中共享。
+
+具体的使用方法：
+
+```javascript
+@Injectable({ scope: Scope.REQUEST })
+export class CatsService {}
+```
+
+`Injectable` 里面的传参只可以配置 scope 字段或者不传，表示 `CatsService` 的作用域，不传的话，默认则是在所有类中共享依赖的实例。常见的配置有：
+
+1. `DEFAULT` 依赖的实例在所有需要的类中共享；
+2. `TRANSIENT` 在每个需要依赖的类中，单独传递实例，而不与其他类共享，为单例模式；
+3. `REQUEST` 依赖的实例不会在初始化中生成，而是在每次请求的时候，都会重新生成对应实例，并在该请求的所有类中共享该实例；
+
+先看看 `TRANSIENT` 模式，按照前文说的依赖注入的方式，一旦一个依赖被标记为 `isResolved`，其实例就已经是生成的了，下次还需要该依赖的时候，则直接用已经生成的实例。`TRANSIENT` 模式在第一个依赖生成的时候，就和默认方式不一样了。
+
+```javascript
+public async loadInstance<T>(
+  wrapper: InstanceWrapper<T>, collection: Map<string, InstanceWrapper>,
+  module: Module, contextId = STATIC_CONTEXT, inquirer?: InstanceWrapper,
+) {
+  const inquirerId = this.getInquirerId(inquirer);
+  const instanceHost = wrapper.getInstanceByContextId(contextId, inquirerId);
+
+  if (instanceHost.isPending) {
+    return instanceHost.donePromise;
+  }
+  const done = this.applyDoneHook(instanceHost);
+  const { name, inject } = wrapper;
+  const targetWrapper = collection.get(name);
+  if (isUndefined(targetWrapper)) {
+    throw new RuntimeException();
+  }
+  if (instanceHost.isResolved) {
+    return done();
+  }
+  const callback = async (instances: unknown[]) => {
+    const properties = await this.resolveProperties(wrapper, module, inject,contextId, wrapper, inquirer);
+    const instance = await this.instantiateClass(instances, wrapper, targetWrapper, contextId, inquirer);
+    this.applyProperties(instance, properties);
+    done();
+  };
+  await this.resolveConstructorParams<T>(wrapper, module, inject, callback, contextId, wrapper, inquirer);
+}
+
+public getInstanceByContextId(contextId: ContextId, inquirerId?: string) {
+  if (this.scope === Scope.TRANSIENT && inquirerId) {
+    return this.getInstanceByInquirerId(contextId, inquirerId);
+  }
+  // 如果不是 TRANSIENT 则会返回静态实例，也就是通用实例
+  const instancePerContext = this.values.get(contextId);
+  return instancePerContext
+    ? instancePerContext
+    : this.cloneStaticInstance(contextId);
+}
+```
+
+这里有个细节地方，在加载实例的通用入口 `loadInstance` 里面，`getInstanceByContextId` 方法会判断是否是 `TRANSIENT` 模式，如果是，则会进入 `getInstanceByInquirerId` 根据引用方类来获得实例，自然不同的。`getInstanceByInquirerId` 正如名字，通过引用方，也就是 `InquirerId` 来获取实例，`getInstanceByContextId` 则是通过上 `ContextId` 来获取实例，而 `ContextId` 默认是静态实例的 id，也就是 1。在 `getInstanceByInquirerId` 里面会通过 `InquirerId` 在通过获取引用方的实例集合，再通过 `contextId` 获得最后的实例，这个就是 `TRANSIENT` 的特色，**依赖通过实例的引用方的 `InquirerId`，再通过 `ContextId` 来获取，所以不同的类，注入相同的依赖类，实例的时候，也会获取到不同的依赖实例**。
+
+`getInstanceByContextId` 和 `getInstanceByInquirerId` 若无法根据 `contextId` 获得实例，都会有一个克隆实例的机制，`getInstanceByContextId` 里面是 `cloneStaticInstance`，这里看看 `getInstanceByInquirerId` 返回的 `cloneTransientInstance`：
+
+```javascript
+public cloneTransientInstance(contextId: ContextId, inquirerId: string) {
+  const staticInstance = this.getInstanceByContextId(STATIC_CONTEXT);
+  const instancePerContext: InstancePerContext<T> = {
+    ...staticInstance,
+    instance: undefined,
+    isResolved: false,
+    isPending: false,
+  };
+  if (this.isNewable()) {
+    instancePerContext.instance = Object.create(this.metatype.prototype);
+  }
+  this.setInstanceByInquirerId(contextId, inquirerId, instancePerContext);
+  return instancePerContext;
+}
+```
+
+可以看到返回的 `instancePerContext` 是一个新对象，对象里面的 `instance` 实例已经为 `undefined`，并且 `isResolved` 和 `isPending` 为 `false`；这样若一个依赖已经被实例过了，当别的类需要这个依赖的实例，遍历的时候就会进入 `loadInstance` 函数，并克隆实例，从而获得新的实例对象可以继续遍历。
+
+### 注入作用域之 REQUEST
+
+`REQUEST` 模式不会在一开始初始化的时候就实例好所有的依赖，而且是在请求的时候去实例化依赖。`DEFAULT`、`TRANSIENT` 和 `REQUEST` 都会在初始化的时候创建路由，但是 `REQUEST` 是在发生请求的时候，再创建新的上下文环境，每个请求都是新的。在创建路由的时候，会根据 `isDependencyTreeStatic` 的返回，来判断是不是要实现 `REQUEST` 的路由：
+
+```javascript
+public isDependencyTreeStatic(lookupRegistry: string[] = []): boolean {
+  if (!isUndefined(this.isTreeStatic)) {
+    return this.isTreeStatic;
+  }
+  // 为 REQUEST 模式，则 isTreeStatic 为 false
+  if (this.scope === Scope.REQUEST) {
+    this.isTreeStatic = false;
+    return this.isTreeStatic;
+  }
+  if (lookupRegistry.includes(this[INSTANCE_ID_SYMBOL])) {
+    return true;
+  }
+  lookupRegistry = lookupRegistry.concat(this[INSTANCE_ID_SYMBOL]);
+
+  const { dependencies, properties, enhancers } = this[
+    INSTANCE_METADATA_SYMBOL
+  ];
+  let isStatic =
+    (dependencies &&
+      this.isWrapperListStatic(dependencies, lookupRegistry)) ||
+    !dependencies;
+
+  if (!isStatic || !(properties || enhancers)) {
+    this.isTreeStatic = isStatic;
+    return this.isTreeStatic;
+  }
+  // 省略下面的代码
+}
+```
+
+`isDependencyTreeStatic` 计算是否是静态实例，比如 `DEFAULT` 和 `TRANSIENT` 模式。上面还可以看到 `isWrapperListStatic` 这个功能，如果一个类注入了依赖，若依赖是 `REQUEST` 模式，则这个类也会是 `REQUEST` 模式，从而实现作用域的传递。
+
+这个 `isDependencyTreeStatic` 在初始化的时候，其实就已经调用了，在 `instantiateClass` 里面的 `isStatic` 方法就通过 `isDependencyTreeStatic` 来判断是否是静态实例，如果是则 `instantiateClass` 会 new 一个实例。
+
+下面看一下 `REQUEST` 下路由处理函数的机制：
+
+```javascript
+public createRequestScopedHandler(
+  instanceWrapper: InstanceWrapper, requestMethod: RequestMethod,
+  module: Module, moduleKey: string, methodName: string,
+) {
+  const { instance } = instanceWrapper;
+  const collection = module.controllers;
+  return async <TRequest, TResponse>(req: TRequest, res: TResponse, next: () => void) => {
+    try {
+      const contextId = this.getContextId(req);
+      this.container.registerRequestProvider(req, contextId);
+
+      const contextInstance = await this.injector.loadPerContext(
+        instance, module, collection,contextId);
+      await this.createCallbackProxy(
+        contextInstance, contextInstance[methodName], methodName,
+        moduleKey, requestMethod, contextId, instanceWrapper.id,
+      )(req, res, next);
+    } catch (err) {/*省略部分代码*/}
+  }
+}
+```
+
+`ContextId` 默认是静态 id，在 `REQUEST` 模式下，**若发生请求的时候，则是当前请求的 `ContextId`，若没有则创建一个随机数 `Math.random()`。** 普通的请求最后都会创建一个随机数，至于其他的情况就不明确了，只是随机数还是有可能重复的，当然官方有介绍到由于采用的 `WeakMap`，里面的 key 是个对象，什么对象呢？`{ id: 1 }`。里面的 id 可能会重复，但是 key 已经是个不同的对象，所以就算是重复请求同一个路径，key 是不同的对象，那 `ContextId` 就是安全的。
+
+`loadPerContext` 方法则是加载实例调用的，还是 `loadInstance` 方法，然后经过 `getInstanceByContextId` 又是一个全新的 instanceWrapper，里面的 `instance` 实例已经为 `undefined`，并且 `isResolved` 和 `isPending` 为 `false`，于是又可以继续迭代下去。最后 `createCallbackProxy` 则和普通的模式一样了。
+
+还有复杂的，比如 `REQUEST` 和 `TRANSIENT` 结合，与循环依赖结合等等，这些复杂的情况就不一一讨论了，正常人都不会这么用的。。。。
+
+## 中间件
+
+在初始化的过程中，其实省略了中间件是如何加入应用，并结合路由的过程，只是简单描述了中间件添加到配置中。主要也是这部分没有什么特别的，顺着代码下去就能明白，这介绍一下最后的环节：
+
+```javascript
+private async bindHandler(
+  wrapper: InstanceWrapper<NestMiddleware>, applicationRef: HttpServer,
+  method: RequestMethod, path: string, module: Module,
+  collection: Map<string, InstanceWrapper>,
+) {
+  const { instance, metatype } = wrapper;
+  if (isUndefined(instance.use)) {
+    throw new InvalidMiddlewareException(metatype.name);
+  }
+  const router = applicationRef.createMiddlewareFactory(method);
+  const isStatic = wrapper.isDependencyTreeStatic();
+  if (isStatic) {
+    const proxy = await this.createProxy(instance);
+    return this.registerHandler(router, path, proxy);
+  }
+  // ..。省略后面代码
+}
+
+private async createProxy( instance: NestMiddleware, contextId = STATIC_CONTEXT) {
+  const exceptionsHandler = this.routerExceptionFilter.create(
+    instance, instance.use, undefined, contextId,
+  );
+  const middleware = instance.use.bind(instance);
+  return this.routerProxy.createProxy(middleware, exceptionsHandler);
+}
+
+private registerHandler(
+  router: (...args: any[]) => void, path: string,
+  proxy: <TRequest, TResponse>(req: TRequest, res: TResponse, next: () => void) => void,
+) {
+  const prefix = this.config.getGlobalPrefix();
+  const basePath = validatePath(prefix);
+  if (basePath && path === '/*') {
+    path = '*';
+  }
+  router(basePath + path, proxy);
+}
+```
+
+通过 `createProxy` 创建的代理返回的 `this.routerProxy.createProxy` 和初始化路由最后实现代理的方式一致，而 `router` 的实现 `applicationRef.createMiddlewareFactory(method)` 和初始化路由里面的路由方法创建 `const routerMethod = this.routerMethodFactory.get(router, requestMethod).bind(router);` 是一模一样的。
+
+于是可以发现中间件的注册，其实和普通路由的注册一样，只是路由的实现是通过对应的 `method`，而中间是通过 `use` 方法。最后当请求发送过来的时候，先依次通过这些中间件处理，在 `next()` 下流转，最后才到路由处理函数。本质还是用到 `express` 中间件的方法。
