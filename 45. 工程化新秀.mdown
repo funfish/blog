@@ -1,0 +1,586 @@
+炎热的七月，透着一点雨水，就这么来临。半年就如此过去了，看了不少内容，但是想写成博客的却越来越少，可能是人懒了。
+最近不少工程化的新秀如后浪般出现，虽然不至于动摇 webpack 这个巨浪，只是对行业也有很深刻的影响，觉得蛮有意思，这里介绍一下：
+
+## esbuild
+
+esbuild 做的事情很简单，打包压缩，没有其他的复杂功能，目前也没有其他的插件系统，倒是 esbuild 本身更像一个插件，有点像 webpack 刚出来那会的情况。
+
+esbuild 最大特点就是快，飞快，其本身采用 Go 语言实现，加上高并发的特色，在打包压缩的路上，一骑绝尘。官方数据，和正常的 webpack 相比，在打包方面提高了 100+ 倍以上，这对于需要代码更新后立刻发版到线上的项目而言，超级有意义，这不就是大家一直追求的快速构建嘛。
+
+在构建项目的时候，基本都可以看到这一幕，打包到最后，本以为要结束了，结果进度条一直在 90% 左右的位置，一动不动，尤其是项目大了之后。其实这个最后的过程，是代码丑化、压缩以及 tree-shaking 的过程。代码压缩这部分，在以前的 webpack，是 UglifyjsWebpackPlugin 来处理的，后来内置到 webpack 里面，再后来，由于 uglify-js 不支持 es6，改用 terser 作为 webpack 内置的默认打包压缩工具。即便如此，业务小的时候还好，上来后，打包的时间会非常长。
+
+### 本地尝试
+
+按照文档思索着建一个最小的 demo，来看看速度如何。按照首页的提示，采用如下内容，分别用 webpack 和 esbuild 来打包：
+
+```javascript
+// 业务内容
+import * as React from "react";
+import * as ReactDOM from "react-dom";
+
+ReactDOM.render(<h1>Hello, world!</h1>, document.getElementById("root"));
+
+// webpack 配置，只是对jsx采用babel打包，同时还要配置babel的基本配置
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.(js|jsx)$/,
+        exclude: /node_modules/,
+        use: {
+          loader: "babel-loader",
+        },
+      },
+    ],
+  },
+};
+
+// esbuild 指令内容，由于采用首页的方式一直报错，最后根据错误，改为如下指令
+esbuild --bundle main.jsx --outdir=dist --minify --sourcemap
+```
+
+采用 esbuild 的时候，可以明显感觉到速度飞快，基本上 半秒不到就打包好了，而 webpack 嗯。。。三四秒的样子，速度还是很明显的，可能是因为项目小，没有 100 倍的感觉，但是 esbuild 基本上不用等。只是看看打包的体积，发现 esbuild 的体积比 webpack 的大三倍。这难道是时间换体积？经过排查是 `process.env.NODE_ENV` 的问题，esbuild 的版本里面包含了 development 和 production 两个模式的内容。官方文档有提示到：
+
+> Note that the double quotes around "production" are important because the replacement should be a string, not an identifier. The outer single quotes are for escaping the double quotes in Bash but may not be necessary in other shells.
+
+`process.env.NODE_ENV` 变量需要配置，并且不能省略 `"production"` 的引号，只是在 json 里面，添加引号一直无法正常使用，去掉引号会导致无法识别变量，最后采用 api 的方式构建，如下
+
+```javascript
+const { build } = require("esbuild");
+
+build({
+  entryPoints: ["./main.jsx"],
+  outdir: "dist",
+  minify: true,
+  bundle: true,
+  sourcemap: true,
+  define: {
+    "process.env.NODE_ENV": '"production"',
+  },
+}).catch(() => process.exit(1));
+```
+
+需要注意的是，define 里面的 key-value 结构的 value 不能是对象，不支持嵌套的 key。最后会打包有如下效果：
+
+```javascript
+// 原本的 process.env.NODE_ENV 会被替换，development的内容会被设置为null
+if (true) {
+  checkDCE();
+  module.exports = require_react_dom_production_min();
+} else {
+  module.exports = null;
+}
+```
+
+最后回头一看发现和 webpack 打包的体积居然是一模一样的，esbuild 大了 0.5k 不到。另外有个有趣的现象，如果把 bundle 配置去掉，包的内容，真的只有上面的 react 的业务代码。
+
+想看看 esbuild 的源码，专门学了一下 go 语言，发现还是蛮简单（可能是学比较基础）。只是三脚猫功夫直接看源码，还是云里雾里的，也就放弃了。
+
+### esbuild-webpack-plugin
+
+看到 umi 里面支持 esbuild，具体可以看看 `esbuild-webpack-plugin` 的代码。结构是一个典型的 webpack 的插件，通过 esbuild 的 transform 这个 api 来实现打包，可以看看下面的配置：
+
+```javascript
+const transform = async () =>
+  await ESBuildPlugin.service.transform(source, {
+    ...this.options,
+    minify: true,
+    sourcemap: !!devtool,
+    sourcefile: file,
+  });
+```
+
+官方介绍到，如果需要重复调用 esbuild 的 api，最好是实例化 esbuild，达到复用的方式，也就是采用 transform 这个 api。
+
+可以看到上面的代码，采用的配置只是 minify 而已，没有对 bundle 处理，按照作者的介绍
+
+> esbuild 有两个功能，bundler 和 minifier。bundler 的功能和 babel 以及 webpack 相比肯定差很多，直接上风险太大；而 minifier 倒是可以试试，在 webpack 和 babel 产物的基础上做一次压缩，坑应该相对较少。
+
+这样确实不错，让 esbuild 做最专业的事情，同时可以继续使用生态丰富的 webpack，而压缩则是 esbuild，作者说到： **试验性功能，可能有坑，但效果拔群**，具体的时间效果也不对比了，送上[传送门](https://zhuanlan.zhihu.com/p/139219361)。效果只是减少 1/3，估计是 webpack 本身其他操作占用了时间。
+
+这个插件有配合 umi 的部分，但也可以用到其他 webapck 项目里面。具体是要配置 `optimization.minimizer` 如下：
+
+```javascript
+optimization: {
+  minimizer: [new (require("esbuild-webpack-plugin").default)()];
+}
+```
+
+正常的 webpack 会采用 terser 作为内置的默认压缩工具，这里面改为 Esbuild 就可以了。
+
+## ES Module
+
+上面的 esbuild，可以说很好的解决了生产模式的压缩疼点，提高打包速度，但是开发环境呢？能用上 esbuild 吗？当然也是可以的，只是最优解并非如此。
+
+有一次，看到一个线上地址 [https://iconsvg.xyz/](https://iconsvg.xyz/) 的页面，打开控制台一看发现居然是采用 ES Module 的形式，如下图。
+
+![](https://github.com/funfish/blog/raw/master/images/iconsvg.PNG)
+
+现在的浏览器基本已经支持 ES 模块化了，直接模块化有什么不可以？直接用在生产环境会有很多问题，比如请求加载数量，比如兼容性，那对于开发环境呢？如 **vite 和 snowpack** 这样的工具已经就是 bundleless 的工具，在开发环境上采用 ES Module 的方式实现快速热更新。
+
+对于 ES Module，目前文件扩展名为 .js 结构，[有推荐采用 .mjs 后缀](https://v8.dev/features/modules#mjs)，可以更清晰的表明是个模块，由于兼容问题，现在采用 .js 后缀就可以了。
+
+应用的时候要采用下面的格式，来声明这个脚本是一个模块：
+
+```html
+<script type="module" src="main.mjs"></script>
+```
+
+如果没有声明 `type="module"` 浏览器会提示 `Uncaught SyntaxError: Cannot use import statement outside a module` 错误。
+
+## vite
+
+vite 在开发环境通过解析文件返回到浏览器，不会有打包过程。这样当修改项目某个文件的时候，只会向浏览器发送更新该文件的请求，而不会去处理别的文件，最终打包的速度项目大小没有关系，可以很大提高开发环境热更新效率。需要注意的是 vite 在生产环境采用 rollup 打包。
+
+### 开发服务器劫持
+
+vite 在开发环境的定位和 webpack-dev-server 是有点像的，都是作为一个开发服务器，响应客户端的请求。先看看 demo 上具体的效果，官方直接提供一个 [create-vite-app](https://github.com/vitejs/create-vite-app) 项目作为起步脚手架模板，上面提供 vue 到 react 的模板，采用 template-vue 模板，启动的时间非常快，基本上按下回车差不多就跑起来了。可以看看下图：
+
+![](https://github.com/funfish/blog/raw/master/images/viteStart.gif)
+
+几秒钟的时间，项目就启动完毕了，对比一下 vue-cli 3，差不多要 10s 的样子，当然也是由于业务体积的问题，少量的业务，webpack 自然是非常快的（复杂的例子，就没有了，因为 vite 支持的是 vue-next，老项目用的是 vue 2 可能支持力度不好，无法迁移）。
+
+通过控制台可以看一下，发起的请求：
+![](https://github.com/funfish/blog/raw/master/images/vite-network.PNG)
+![](https://github.com/funfish/blog/raw/master/images/vite-network-vue-cli4.PNG)
+前面是 vite 加载过程，后面是 vue-cli 3 的项目，可以明显看到 vite 是直接请求了 `.vue` 文件以及 vue.js 文件，而 vue-cli 3 则是请求打包好后的开发文件，只是前图的 vite 里面明明是一个 `App.vue` 文件为什么会请求三次呢？这里就要说一下 vite 作为开发服务器对网络的劫持作用。
+
+vite 里面会启动一个 koa 服务器，采用中间件的方式对请求的文件劫持，结构如下
+
+```javascript
+// 省略部分代码
+const resolvedPlugins = [
+  moduleRewritePlugin,
+  htmlRewritePlugin,
+  moduleResolvePlugin,
+  proxyPlugin,
+  serviceWorkerPlugin,
+  hmrPlugin,
+  vuePlugin,
+  cssPlugin,
+  esbuildPlugin,
+  jsonPlugin,
+  assetPathPlugin,
+  serveStaticPlugin,
+];
+```
+
+插件的配置从查找模块、模块路径重写到 vue、css 等资源的处理，客户端请求什么内容，就由专门的中间件处理。比如入口，请求 `http://localhost:3000/` 返回的是 `index.html`，但是结果如下：
+
+![](https://github.com/funfish/blog/raw/master/images/vite-index-html.PNG)
+
+中间的 script 部分是和原 `index.html` 不一样的。额外加载 hmr 文件，正是上面 vite 请求网络图里面的 hmr 请求，同时还注入了全局的环境变量 `process.env.NODE_ENV`，可以看一下是如何实现的：
+
+```javascript
+// htmlRewritePlugin 的内容，下面是注入的代码
+const devInjectionCode =
+  `\n<script type="module">\n` +
+  `import "${hmrClientPublicPath}"\n` +
+  `window.__DEV__ = true\n` +
+  `window.process = { env: ${JSON.stringify({
+    ...env,
+    NODE_ENV: mode,
+    BASE_URL: "/",
+  })}}\n` +
+  `</script>\n`;
+async function rewriteHtml(importer: string, html: string) {
+  // 省略缓存以及script标签替换内容
+  return injectScriptToHtml(html, devInjectionCode);
+}
+app.use(async (ctx, next) => {
+  await next();
+  if (ctx.status === 304) {
+    return;
+  }
+  if (ctx.response.is("html") && ctx.body) {
+    // 省略部分代码
+    ctx.body = await rewriteHtml(importer, html);
+    return;
+  }
+});
+```
+
+除了 html 的特殊处理外，vite 还会对 `import { createApp } from "vue"` 这样的 import 语句重写路径为 `import { createApp } from "/@modules/vue.js"`，前者的路径客户端是无法正常找到的，通过重写 `@modules` vite 可以明白这是一个第三方模块包的请求，对于这些 node_modules 的包可以做一系列的优化，后面会介绍到。
+
+### vue 文件处理
+
+对于 vue 单文件的处理，首个文件的访问路径还是源于 main.js 的正常 import，但是到了 vite，.vue 文件则会被 vuePlugin 处理，毕竟浏览器无法识别 .vue 文件，需要解析再返回给浏览器。先看看原始代码 App.vue：
+
+```javascript
+// 原始文件
+<template>
+  <div class="hehe">522215{{ a }}</div>
+</template>
+
+<script>
+export default {
+  name: "App",
+  data() {
+    return {
+      a: 123
+    };
+  }
+};
+</script>
+
+<style scoped>
+.hehe {
+  background: red;
+}
+</style>
+```
+
+拦截后输出的文件
+![](https://github.com/funfish/blog/raw/master/images/vite-vue-loading.PNG)
+
+截图是返回的 App.vue 文件，可以看到原始的 .vue 文件变成一个 js 文件，也就是上图的代码。上图仅保留了原 App.vue 里面的 script 部分，渲染模板 template 以及样式 style 在 script 部分里通过 import 的方式引入，一个 .vue 文件拆分成三个。于是就有了左边 network 里面请求的 `App.vue?type=style&index=0` 和 `App.vue?type=template`。拆分成三个请求，每个请求各司其责，比如更新 template 的时候，就发送新的 template 文件到客户端，避免一次修改三个文件：script、template 和 style 混在一起发送，可以说很巧妙。
+
+vuePlugin 里面的实现，更多的是对请求路径的参数判断，如果参数 type 为 undefined(就是 script)、template 以及 style，都分别处理，同时在 script 的时候，如果文件是 typescript，还会采用 esbuild 的 transform API 来编译代码。
+
+三个请求的由来，其实可以追朔到 vue 对 sfc 文件的解析，在 sfc 单文件处理的模块里面，会通过 ast 的方式将文件拆分成，script、template 和 style 三个模式，自然 vite 里面应该按照这三个模式更新 vue 是最合理的。
+
+### 热更新机制
+
+上面截图以及代码部分可以看到 hmr 的字样，hmr 则是代表热更新的部分。热更新分为两部分，一部分在客户端，一部分在开发服务器。客户端的主要热更新的代码，在 html 访问的时候，已经通过 `import "${hmrClientPublicPath}"` 这样的方式加载，而 vite 也会通过 chokidar 来监听访问过的文件，当文件变化的时候，会通过 websocket 来通知客户端，再由客户端请求具体的更新代码。
+
+```javascript
+// 客户端主要代码
+socket.addEventListener("message", async ({ data }) => {
+  switch (type) {
+    case "connected":
+      console.log(`[vite] connected.`);
+      break;
+    case "vue-reload":
+    // 重新加载vue
+    case "vue-rerender":
+    // vue 组件重新渲染
+    case "style-update":
+    // 样式更新
+    case "style-remove":
+    // 移除样式
+    case "js-update":
+    // js更新，react项目更新依赖这个
+    case "custom":
+    // 自定义的，目前没有用到好像
+    case "full-reload":
+    // 整个页面重新加载，
+  }
+});
+```
+
+客户端对 vue-rerender 的指令，在加载文件后，会直接调用 vue-next 里面的热更新的函数：
+
+```javascript
+// @vue/runtime-core > hmr > rerender 代码
+function rerender(id: string, newRender?: Function) {
+  const record = map.get(id)
+  if (!record) return
+  // Array.from creates a snapshot which avoids the set being mutated during
+  // updates
+  Array.from(record).forEach(instance => {
+    if (newRender) {
+      instance.render = newRender as InternalRenderFunction
+    }
+    instance.renderCache = []
+    // this flag forces child components with slot content to update
+    isHmrUpdating = true
+    instance.update()
+    isHmrUpdating = false
+  })
+}
+```
+
+可以看到这里将新的 render 注入，也就是 template 解析后生成的渲染函数，再调用实例的 update 方法，而这个 update 方法是，vue-next 里面渲染组件的主要入口，采用 effect 的方式。
+
+服务端监听本地文件的变化。在 vue 的中间件里面，会对更新后的文件发送对应的指令，这里提一下重新加载 vue 文件和重新渲染 vue 组件的处理的方式不同。
+
+```javascript
+// descriptor 是 vue-sfc 里面通过 ast 分析出来的描述器
+if (!isEqualBlock(descriptor.script, prevDescriptor.script)) {
+  return sendReload();
+}
+
+if (!isEqualBlock(descriptor.template, prevDescriptor.template)) {
+  needRerender = true;
+}
+```
+
+可以看到如果前后脚本不一致会重新加载，而如果只是模板不一样，则只会重新渲染组件。这里可以看到是对 vue 的处理，那如果是 react 项目呢？
+
+### react 项目处理
+
+在上面的代码里面，我们经常可以看到 vue 的影子，比如 vue 的中间件，vue 的客户端的热更新代码，而对于 react 是需要特殊的配置的，这里我们看看 react 项目的配置时候需要的插件：
+
+```javascript
+// @ts-check
+const reactPlugin = require("vite-plugin-react");
+
+/**
+ * @type { import('vite').UserConfig }
+ */
+const config = {
+  jsx: "react",
+  plugins: [reactPlugin],
+};
+
+module.exports = config;
+```
+
+在 vite.config.js 里面需要按照如上配置，而之前的 vue-next 则是什么都不用写。可以明显感觉到 vite 里面 vue-next 是一等生，毕竟连客户端的热更新代码，都用到 vue 的热更新部分。。。。
+
+通过 vite-plugin-react 可以向 vite 项目提供更多的中间件，这个也是类似于 vue 的中间件，只是一个是内置，一个第三方包来配置。通过劫持 html 返回自己的运行时更新代码 react-refresh 部分以及 vite 的 hmr 客户端代码。
+
+```javascript
+//  vite-plugin-react 里面代码
+module.exports = {
+  resolvers: [resolver],
+  configureServer: reactRefreshServerPlugin,
+  transforms: [reactRefreshTransform],
+};
+
+// vite 里面处理插件的 transforms 的方法
+app.use(async (ctx, next) => {
+  await next();
+
+  const { path, query } = ctx;
+  let code: string | null = null;
+
+  for (const t of transforms) {
+    if (t.test(path, query)) {
+      ctx.type = "js";
+      if (ctx.body) {
+        code = code || (await readBody(ctx.body));
+        if (code) {
+          ctx.body = await t.transform(
+            code,
+            isImportRequest(ctx),
+            false,
+            path,
+            query
+          );
+          code = ctx.body;
+        }
+      }
+    }
+  }
+});
+```
+
+reactRefreshServerPlugin 会先服务器添加中间件，当访问 html 代码的时候，则会注入基本的全局代码；transforms 则会在 vite 开发服务器搭建的时候，通过 transforms 方式添加中间件，对 jsx/tsx 文件处理，注入以下关键代码。
+
+```javascript
+const header = `
+  import RefreshRuntime from "${runtimePublicPath}";
+  let prevRefreshReg;
+  let prevRefreshSig;
+  if (!window.__vite_plugin_react_preamble_installed__) {
+    throw new Error(
+      "vite-plugin-react can't detect preamble. Something is wrong. See https://github.com/vitejs/vite-plugin-react/pull/11#discussion_r430879201"
+    );
+  }
+  if (import.meta.hot) {
+    prevRefreshReg = window.$RefreshReg$;
+    prevRefreshSig = window.$RefreshSig$;
+    window.$RefreshReg$ = (type, id) => {
+      RefreshRuntime.register(type, ${JSON.stringify(path)} + " " + id)
+    };
+    window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+  }`.replace(/[\n]+/gm, "");
+
+const footer = `
+  if (import.meta.hot) {
+    window.$RefreshReg$ = prevRefreshReg;
+    window.$RefreshSig$ = prevRefreshSig;
+    import.meta.hot.accept();
+    RefreshRuntime.performReactRefresh();
+  }`;
+```
+
+上面是注入的代码，header 和 footer。可以看出来来，主要注入的部分是热更新相关的。其中有个很特别的地方 `import.meta.hot`，这个是 vite 特有的标记；
+
+> For manual HMR, an API is provided via import.meta.hot.
+> For a module to self-accept, use import.meta.hot.accept:
+
+```javascript
+export const count = 1;
+if (import.meta.hot) {
+  import.meta.hot.accept((newModule) => {
+    console.log("updated: count is now ", newModule.count);
+  });
+}
+```
+
+这是 `import.meta.hot` 的用法，对于正常的需要热更新的代码文件，可以通过 `import.meta.hot` 这个条件语句判断。当内容更新的时候，加载内容，并执行下面 `accept` 的回调，至于回调里面如何处理，则需要自己控制了。react 采用的则是 `import.meta.hot` 的方式，更新的方式，当然是通过 react-refresh 来。
+
+上面客户端热更新方式里面，有一种是 js-update，当 jsx 文件更新的时候，会通知到客户端执行 js-upload，并最终加载新的 jsx 文件，当然同时也包含上面的添加的代码。
+
+在 js-update 里面，会分析服务端下发文件的 id 路径，而加载哪些文件，则是根据这个 id 路径来判断的，通过分析 id 的所有依赖，依次加载。这些依赖的来源，并不是 webpack 打包时候分析的 import 的包，而是需要用户调用 accept 或者 acceptDeps 显示添加的，以及依赖更新后的回调函数。比如下面的方式：
+
+```javascript
+import { foo } from "./foo.js";
+
+foo();
+
+if (import.meta.hot) {
+  import.meta.hot.acceptDeps("./foo.js", (newFoo) => {
+    // the callback receives the updated './foo.js' module
+    newFoo.foo();
+  });
+
+  // Can also accept an array of dep modules:
+  import.meta.hot.acceptDeps(
+    ["./foo.js", "./bar.js"],
+    ([newFooModule, newBarModule]) => {
+      // the callback receives the updated modules in an Array
+    }
+  );
+}
+```
+
+官网介绍的这种方式，通过 acceptDeps 指明依赖的路径，当文件变化的时候（指的是自身或者 import 进来的文件），会加载 acceptDeps 中的文件，执行对应的回调。如果不需要指出具体的依赖，比如像 react 的方式，采用 `import.meta.hot.accept()`，表明是自身的更新，或者是自身 import 的文件的更新，重新加载本身，也就是 jsx 文件就好了。
+
+回到 react 身上，采用 `import.meta.hot.accept()` 的方式加 react-fresh 的热更新，好像不是最稳妥的，毕竟每次修改，都要重新加载一次文件，再去更新，没有 vue 来得优雅。当然还有就是不像 sfc 那样需要拆分成三个文件。
+
+### vite 启动
+
+前面介绍了 vite 的拦截，vue 和 react 的处理，但是在一开始的时候会解析 package.json 中的文件，对 dependencies 中的包缓存到 `node_modules/.vite_opt_cache` 里面，不管项目中有没有遇到。多次访问的时候，缓存可以提高访问速度，比如对 vue-next 访问速度的提高。
+
+## snowpack
+
+snowpack 和 vite 都是优秀 ES Module 加载方案，发力的领域也是开发环境。vite 文档介绍到，项目依赖关系的处理是受到 snowpack 的启发，在开发环境上都是会启动一个开发服务器，并且解析返回速度也是类似的。可以看出来 vite 有不少方面是借鉴了 snowpack 。
+
+当然 vite 有自己特色的部分，比如 热更新，可以做到深入到 vue 的热更新机制，以及调用 react 的热更新，当然 vite 里面 vue 是第一公民。snowpack 不同于 vite 的地方在于，其构建的时候，支持 webpack 和 Parcel 等，这样无疑对开发者更加友好。
+
+![](https://github.com/funfish/blog/raw/master/images/vite-snowpack-build.PNG)
+
+这里很好的介绍了 snowpack 构建的 O(1) 的过程，基本上每次文件更新都小于 50ms。well，现在 webpack 5 也做了很多优化，本地开发没有这么不堪了。上图也适用于 vite，两者都是 ES Module 级别的构建。
+
+### snowpack 的劫持
+
+snowpack 和 vite 很不一样，vite 使用 koa 中间件的方式，对不同的文件处理，snowpack 没有中间件的概念，没有 koa 甚至是 express，采用 http-proxy、http 和 http2 来搭建开服服务器。
+
+先看看网络加载情况
+
+![](https://github.com/funfish/blog/raw/master/images/vite-snowpack-network.PNG)
+
+可以看出在 vite 里面 App.vue 被拆分成三个文件加载，而这里，只是分成两个文件，app.js 包含 script 和 template， app.css.proxy.js 则是 style 部分。
+
+snowpack 采用外部插件来解析 vue 的方式，比如 vue 项目里面的配置：
+
+```javascript
+// snowpack.config.json 里面的配置
+"extends": "@snowpack/app-scripts-vue"
+
+// @snowpack/app-scripts-vue 里面的配置
+const scripts = {
+  "mount:public": "mount public --to /",
+  "mount:src": "mount src --to /_dist_",
+};
+
+module.exports = {
+  scripts,
+  plugins: ["@snowpack/plugin-vue", "@snowpack/plugin-dotenv"],
+  installOptions: {},
+  devOptions: {},
+};
+
+// @snowpack/plugin-vue 里面的配置
+module.exports = function plugin(config, pluginOptions) {
+  return {
+    defaultBuildScript: "build:vue",
+    async build({ contents, filePath }) {
+      // 采用 @vue/compiler-sfc 里面的parse来编译 sfc 文件，和 vite 的编译是一样的。
+    }
+  }
+}
+```
+
+如上面的结构，通过加载插件里面的 build 方法，实现对 sfc 文件的解析，中间过程比 vite 要复杂一些，vite 的中间件体系很直观，而 snowpack 则是通过不断的分析 `config.scripts` 里面的配置（通过不断的调用 `fs.stat` 判断），来得到正确的文件路径以及对应的解析方式，比如 `_dist_/App.js` 最后会转换为 `src/App.vue`，并采用上述的 `@snowpack/plugin-vue` 的 build 方法加载 `src/App.vue`，得到打包后的 script/template 组成的部分，以及 css 内容。发送到客户端并作缓存处理后。
+
+build 方法里面会通过 parse 编译 sfc 文件，得到的 descriptor 和 vite 的差不多，包含 script、template 和 style 三个部分，其中 script 部分的代码会和 tempalte 的代码合并也就是后面 App.js 的主体。 style 作为单独的部分不会立刻发送到客户端，而是先做本地缓存里面。
+
+css 部分会有如下处理方式
+
+```javascript
+// snowpack dev.js wrapResponse
+if (responseFileExt === ".js") {
+  code = wrapImportMeta({ code, env: true, hmr: isHmr, config });
+}
+if (responseFileExt === ".js" && cssResource) {
+  code =
+    `import './${path.basename(reqPath).replace(/.js$/, ".css.proxy.js")}';\n` +
+    code;
+}
+```
+
+可以看到在 App.js 里面添加 css 的 import 部分，这个和 vite 类似，只是 css 文件后缀采用 css.proxy.js 标识，而 vite 采用 `type=style` 的方式来区分。
+
+另外 snowpack 对 html 的处理，会有一个 `isRoute` 变量来判断，并注入热更新等代码；
+
+### 热更新机制
+
+分为两套代码，客户端代码和开发服务器的代码，其中客户端的代码没有 vite 种类复杂
+
+```javascript
+socket.addEventListener("message", ({ data: _data }) => {
+  if (!_data) {
+    return;
+  }
+  const data = JSON.parse(_data);
+  debug("message", data);
+  if (data.type === "reload") {
+    reload();
+    return;
+  }
+  if (data.type !== "update") {
+    return;
+  }
+  runModuleAccept(data.url)
+    .then((ok) => {
+      if (!ok) {
+        reload();
+      }
+    })
+    .catch((err) => {
+      console.error(err);
+      reload();
+    });
+});
+```
+
+可以看出 snowpack 只有 reload 和 update 模式，没有 vite 那样复杂，但是其 js 部分更新逻辑是基本一致的，并且有很相同的 `import.meta.hot` 方式以及 `import.meta.hot.accept` 功能。基本和 vite 差不多，这里就不介绍了，当然 snowpack 不用判断 `import.meta.hot` 是不是在 if 条件语句里面。
+
+snowpack 没有像 vite 那样在客户端采用 vue 的热更新。
+
+snowpack 启动的时候，也会对依赖进行分析，不同的是它会将依赖放在 `node_modules/.cache/snowpack/dev` 下面。node_modules 包的请求路径也会被改写为 `web_modules/vue.js` 这样的特殊标记。
+
+### webpack
+
+在 snowpack 还可以使用 webpack，官方专门维护了 `@snowpack/plugin-webpack` 插件，和上面的 `@snowpack/plugin-vue` 一样都归属于插件范畴，在解析文件的时候会用到，提供一个 build 方法，并且最后通过 webpack 打包文件。snowpack 提供了一些默认配置，比如 babel、MiniCssExtractPlugin 这些。如果要扩展的话采用以下的方式配置，和 vue.config.js 的方式蛮像的。
+
+```javascript
+// snowpack.config.js
+module.exports = {
+  plugins: [
+    [
+      "@snowpack/plugin-webpack",
+      {
+        extendConfig: (config) => {
+          config.plugins.push(/* ... */);
+          return config;
+        },
+      },
+    ],
+  ],
+};
+```
+
+这里 webpack 的处理方式蛮奇怪的，会将打包好之后的文件，手动注入到 html 里面，而不是采用默认的方式，可能是没有 index.html？可能也是受限于 snowpack 和 webpack 的结合？具体的也就没有深入研究了，感兴趣的可以看看。
+
+## 总结
+
+上面介绍了三款最近流行的打包工具，esbuild 用于生产环境，vite 和 snowpack 主要用于开发环境。esbuild 打包压缩速度远超同行，也被用于 vite 和 snowpack 里面，作为 JavaScript 文件和 Typescript 文件降级和编译的工具，esbuild 如果要用于生产的话，可以考虑使用 `esbuild-webpack-plugin`，仅仅作为压缩工具，效率也能提高不少。
+
+vite 里面有不少借鉴 snowpack 的部分，当然也有自己特别的方式，比如中间件的结构，比如客户端更精准的热更新，当然和 snowpack 一样支持 webpack 更好了，只是目前看来难度不大？两者都可以用在生产，目前看来 vite 采用 rollup 打包，离主流 webpack 有点远，而 snowpack 支持 webpack 所以友好度更高。当然 vite 有尤大佬参与，自然不太一样。
+
+本文还有不少源码没有深入介绍到，只是做一个稍微浅的解读，感兴趣的可以继续深入研究。
