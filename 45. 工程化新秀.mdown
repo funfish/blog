@@ -141,8 +141,11 @@ vite 在开发环境的定位和 webpack-dev-server 是有点像的，都是作�
 几秒钟的时间，项目就启动完毕了，对比一下 vue-cli 3，差不多要 10s 的样子，当然也是由于业务体积的问题，少量的业务，webpack 自然是非常快的（复杂的例子，就没有了，因为 vite 支持的是 vue-next，老项目用的是 vue 2 可能支持力度不好，无法迁移）。
 
 通过控制台可以看一下，发起的请求：
+
 ![](https://github.com/funfish/blog/raw/master/images/vite-network.PNG)
+
 ![](https://github.com/funfish/blog/raw/master/images/vite-network-vue-cli4.PNG)
+
 前面是 vite 加载过程，后面是 vue-cli 3 的项目，可以明显看到 vite 是直接请求了 `.vue` 文件以及 vue.js 文件，而 vue-cli 3 则是请求打包好后的开发文件，只是前图的 vite 里面明明是一个 `App.vue` 文件为什么会请求三次呢？这里就要说一下 vite 作为开发服务器对网络的劫持作用。
 
 vite 里面会启动一个 koa 服务器，采用中间件的方式对请求的文件劫持，结构如下
@@ -583,4 +586,4 @@ module.exports = {
 
 vite 里面有不少借鉴 snowpack 的部分，当然也有自己特别的方式，比如中间件的结构，比如客户端更精准的热更新，当然和 snowpack 一样支持 webpack 更好了，只是目前看来难度不大？两者都可以用在生产，目前看来 vite 采用 rollup 打包，离主流 webpack 有点远，而 snowpack 支持 webpack 所以友好度更高。当然 vite 有尤大佬参与，自然不太一样。
 
-本文还有不少源码没有深入介绍到，只是做一个稍微浅的解读，感兴趣的可以继续深入研究。
+本文还有不少源码没有深入介绍到，只是做一个稍微浅的解读，感兴趣的可以继续深入研究，如果能理解 esbuild 的 go 语言的源码就更好了。
