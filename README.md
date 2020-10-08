@@ -8,7 +8,8 @@
 
 - 源码
 
-  - [nest 技术点 ](https://github.com/funfish/blog/issues/44)
+  - [Vue3 的 hoist 与 diff](https://github.com/funfish/blog/issues/46)
+  - [nest 技术点](https://github.com/funfish/blog/issues/44)
   - [nest 初始化](https://github.com/funfish/blog/issues/43)
   - [React Suspense data fetching 探究](https://github.com/funfish/blog/issues/34)
   - [react 之 Reconciliation](https://github.com/funfish/blog/issues/32)

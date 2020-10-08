@@ -1,0 +1,438 @@
+5 月天空最蓝的时候就想要学习 Vue3 的内容，只是耐心被炎热的夏天打散，代码久久都没有看一行。在工作和发呆中，深圳的秋天好像也来，官网落幕后的国庆，大家都回去团聚的时候，提笔回顾一下 Vue3 的内容，也顺便更新一下博客，算是除除草？今年其实更想的去其他深水区探索一下，只是从去年探索到今年，最后，还是回来看 Vue3 了，也是一种无奈吧。
+
+## Vue3
+
+以前的 Vue 像一个黑匣子的，对于开发者而言只是用 sfc 写 template 就足够了，最多偶尔写写 render 函数，灵活度是远远没有 React 方便的。（惭愧，刚没有写几行，国庆又出去玩了，再次提笔已经是 7 号了。。。惭愧）。这次的 Vue3 可以说做的非常彻底，基本把所有 api 都提供出来了，你甚至可以自己写 compile 好的函数。
+
+## hosit 优化
+
+在 Compile 阶段三部曲，transform 中会有一个编译优化的过程，可以看下面两段生成代码的差异:
+
+```javascript
+// 原代码
+createApp({
+  template: `
+    <div>
+      <a data-name="1">
+        <li>123</li>
+      </a>
+    </div>
+  `,
+}).mount("#app");
+
+// compile 生成的代码 没有 hoist 的代码
+export function render(_ctx, _cache) {
+  return (
+    _openBlock(),
+    _createBlock("div", null, [
+      _createVNode("a", { "data-name": "1" }, [
+        _createVNode("li", null, "123"),
+      ]),
+    ])
+  );
+}
+
+// 设置 hoistStatic 为 true 时
+const _hoisted_1 = /*#__PURE__*/ _createVNode(
+  "a",
+  { "data-name": "1" },
+  [/*#__PURE__*/ _createVNode("li", null, "123")],
+  -1 /* HOISTED */
+);
+// compile 生成的代码
+export function render(_ctx, _cache) {
+  return _openBlock(), _createBlock("div", null, [_hoisted_1]);
+}
+```
+
+可以看到开启 `hoistStatic`，会对静态代码部分，也就是 `<a data-name="1"><li>123</li></a>` 进行提升的处理，声明提升到 return 函数前面。只有在第一次编译，才会生成 `_hoisted_1`，这样当局部更新的时候不用在生成 `_hoisted_1`， 直接引用就好了。可以减少 vnode 的更新计算。
+
+当 `compile` 函数里面传入的 `hoistStatic = true`，则会开启 `hoist` 节点的静态处理。对于 sfc 文件模式，会采用 `doCompileTemplate`， 其 `hoistStatic` 默认是 `true`，如果非 sfc 方式，并且直接调用 compile，则默认为 false。
+
+### 生成 hoist
+
+这里就有一个问题，什么节点才是静态节点？为什么不默认生成？
+这个判断比较复杂，需要遍历树的所有节点。下面有几个规则：
+
+1. 根节点不做 `hosit` 处理，比如上面的 div 标签，避免父节点 props 透传使得其可能变成非静态节点。
+
+2. 对于 element 节点，需要节点树下的节点点没有 **key、ref、绑定的 props、指令等以及变量文字** （还有很多种情况要讨论的，比如常量资源等）。判断子节点是否静态的时候会采用缓存方式，避免后续的重复判断子节点。
+
+3. props 也可以是 `hoist` 节点部分，当然不能是动态的部分，并且元素本身没有被 `hoist` 处理。
+
+4. 文本节点，本身为文本，如 `<div />123` 里面的 `123` 也会被静态化。
+
+如果没有将节点静态化，会有进一步迭代子节点的情况。这里可以看到 **将节点静态化，需要判断其所有子节点是否是静态。**
+
+如果 DOM 里面存在其他的比如 `{{ state.count }}` 这些内容，对应的部分则不会被提升，但是其他的可以，比如
+
+```html
+<div>
+  <a data-name="1">
+    {{ state.count }}
+    <li>123</li>
+  </a>
+</div>
+```
+
+这个时候 `a` 标签不会被 `hoist`，但是里面的 `li` 标签不受其影响，还会被静态化。
+
+`hoist` 生成时会被 `push` 到上下文的 hoists 上，生成 code 的时候会被提前处理，最后如上面所示，会先声明 `_hoisted_1`，并在返回的渲染函数里面，将 `_hoisted_1` 作为 child 传入。
+
+这里有个问题，为什么普通的非 sfc 文件的编译，没有默认开启 `hoistStatic` 功能？可能是执行时间问题，原本的 `ast` 生成和 `transform` 过程都会遍历一次树，若开启 `hoistStatic`，最坏情况下还会遍历一次树，并且没有起到任何作用，只是这个解释有点牵强，可能是给开发者更多的选择吧？毕竟 `compile` 方法需要注册才能使用，而注册的过程需要开发者自己配置。
+
+### stringifyStatic
+
+在 `hoist` 时，可能会将节点字符串化，比如下面:
+
+```html
+<!-- 内容： -->
+<template>
+  <div>
+    <a href="1" />
+    <a href="1" />
+    <a href="1" />
+    <a href="1" />
+    <a href="1" />
+  </div>
+</template>
+```
+
+```javascript
+// 生成如下
+const _hoisted_1 = /*#__PURE__*/ _createStaticVNode(
+  '<a href="1"></a><a href="1"></a><a href="1"></a><a href="1"></a><a href="1"></a>',
+  5
+);
+export function render(_ctx, _cache) {
+  return _openBlock(), _createBlock("div", null, [_hoisted_1]);
+}
+```
+
+可以看到原本会被 hoist 提升的静态节点，也就是 5 个会通过 `createVnode` 创建 vnode，现在进一步直接变成了字符串。自然是减少了 vnode 的生成，原本要生成 5 个 hoist 以及其 props 的，现在只要一个字符串。当然字符串节点最大的好处，还是渲染挂载 DOM 的时，可以让 `parent.innerHTML = 字符串`，简单直接效率高，不用一步步遍历子节点。这可以说是比上面的变量提升要彻底很多。完全静态的代码，直接设置 `innerHTML`，其他什么的都不需要。
+
+**当然这个功能只有编译阶段为非浏览器环境才会开启，也就是 nodejs 环境**，为什么呢？因为静态节点字符串化的生成判断是比较耗性能的。
+
+生成字符串节点，首先必须是 `hoist` 静态的节点。其次若子节点连续大于等于 20 个静态节点或者节点中有大于等于 5 个节点有 props，则会进入字符串化。
+
+对于大于等于 20 个节点或者有大于等于 5 个节点有 props 的判断大致如下：
+
+```javascript
+let nc = 0; // 当前节点数量
+let ec = 0; // 存在 props 的节点数量
+let i = 0;
+for (; i < children.length; i++) {
+  const hoisted = getHoistedNode(child)
+  if (hoisted) {
+    const node = child as StringifiableNode
+    const result = analyzeNode(node)
+    if (result) {
+      nc += result[0]
+      ec += result[1]
+      // 节点 push 到 currentChunk 里面为后面 stringifyCurrentChunk 做准备
+      currentChunk.push(node)
+      continue
+    }
+  }
+  i -= stringifyCurrentChunk(i)
+  nc = 0
+  ec = 0
+  currentChunk.length = 0
+}
+stringifyCurrentChunk(i);
+```
+
+会对 parent 下所有的一级子节点遍历，如果遍历的时候发现节点可以静态化，就一直 `continue`，若不能，则对之前的可以静态化的节点进行 `stringifyCurrentChunk` 处理，并且重置 `nc` `ec` `currentChunk`。
+
+上面是总体的流程，重点是 `analyzeNode` 和 `stringifyCurrentChunk`。
+
+前者 `analyzeNode` 会不断的遍历所有嵌套的子节点，比如如下结构，会被认为存在 3 个静态节点。
+
+```html
+<a>
+  <a>
+    <a></a>
+  </a>
+</a>
+```
+
+`analyzeNode` 里面还会对 props 判断，如果 props 不是常见的静态类型，则最后有 `result = false`，分为以下情况：
+
+1. 如果已知的 attr，则可以静态化，因为 alt、src 这些，是 dom 本身就有的。
+2. 或者是已知的静态 binding，如 :src="1"，这个可以静态化的，反之 :abc="1"，就不可以。
+
+对于子节点，如果存在孙节点，则会继续遍历，若节点存在 props，则 `ec++`。
+
+`stringifyCurrentChunk` 会对收集到的可以静态字符串化的节点进行处理，但是这里的静态化，也是一个遍历的过程：
+
+```javascript
+const staticCall = createCallExpression(context.helper(CREATE_STATIC), [
+  JSON.stringify(
+    currentChunk.map((node) => stringifyNode(node, context)).join("")
+  ),
+  String(currentChunk.length),
+]);
+```
+
+每个节点，都会经过 `stringifyNode` 处理，最后 JSON 化。`stringifyNode` 里面会根据不同的节点类型来处理，并遍历树的所有节点，对于 class/style 还会特别处理。这里就不继续阐述里面的规则了。
+
+**可以看出来，静态节点字符串化，效果虽然很好，但是其会对节点树进行两次遍历，一次是判断是否可以字符串化，一次是将节点转为字符串** 过程比较耗时。至于能否两次合为一次，自然是不能的。
+
+只是有个问题，为什么会是 20 个节点以上或者是 5 个含有 props 的节点就判断可以字符串化呢？如果定义 20 个节点为阈值，是为了避免过渡字符串化，那 5 个含有 props 的节点，又是什么考虑呢？这不是明明小于 20 个节点吗，还是认为存在 props 的节点，一般都有 4 个属性？
+
+## diff
+
+`diff` 的过程，在 Vue 和 React 里面，已经从原始的整个树更新对比，算法复杂度 O(n3) 转换成 O(n) 了。
+
+> However, the state of the art algorithms have a complexity in the order of O(n3) where n is the number of elements in the tree.
+
+而这里的 O(n) 也不是最终的目标，比如 react，会将所有需要更新的串在一起，只处理有更新的节点（有点久了，应该是这样的吧），而 Vue3 的思路思路则是维护一个动态数组，`dynamicChildren`，应该说不是一个，而是每个 `block` 都存在 `dynamicChildren`，这个 `dynamicChildren` 是更新的主角，毕竟，静态节点就不用考虑更新了。
+
+### dynamicChildren 生成
+
+`dynamicChildren` 的生成是与 `createBlock` 函数绑定的，只有在 `createBlock` 里面才有可能生成 `dynamicChildren`。
+
+比如下面代码
+
+```html
+<div>
+  <a data-name="1"><li>{{stat.count}}</li></a>
+</div>
+```
+
+最后生成下面的 vnode：
+
+```JavaScript
+// vnode
+{
+  type: 'div',
+  children: [
+    {
+      type: 'a',
+      props: ['data-name': 1],
+      children: [
+        { type: 'li', children: '2', patchFlag: 1 }
+      ]
+    }
+  ],
+  dynamicChildren: [
+    { type: 'li', children: '2', patchFlag: 1 }
+  ]
+}
+// 对应的 compile函数
+function render(_ctx, _cache) {
+  return (_openBlock(), _createBlock("div", null, [
+    _createVNode("a", _hoisted_1, [
+      _createVNode("li", null, _toDisplayString(stat.count), 1 /* TEXT */)
+    ])
+  ]))
+}
+```
+
+可以看到最后生成的 `dynamicChildren` 部分只包含了动态内容，在后面的 `diff` 过程则完全可以将 a 标签忽略掉。同时也可以看到 `openBlock` 和 `createBlock`，前者需要在每次调用 `createBlock` 时触发，用来重置全局变量 `currentBlock` 数组，后者 `createBlock` 则会在子节点的 vnode 构建完成后，将这里的 div 标签生成 vnode，并将 `currentBlock` 赋予该 vnode 的 `dynamicChildren` 字段。
+
+`currentBlock` 数组会在生成 vnode 的时候收集节点，具体如下：
+
+```javascript
+if (
+  (shouldTrack > 0 || isRenderingTemplateSlot) &&
+  !isBlockNode &&
+  currentBlock &&
+  (patchFlag > 0 || shapeFlag & ShapeFlags.COMPONENT) &&
+  patchFlag !== PatchFlags.HYDRATE_EVENTS
+) {
+  currentBlock.push(vnode);
+}
+```
+
+这里的条件蛮多的，`shouldTrack` 表示目前处于实例生成更新阶段，也就是不是 `compile` 阶段，`isBlockNode` 是目前的 vnode 为 `block` 节点，也就是可以生成 `dynamicChildren`， `patchFlag` 这个是重点，大于 0 表示其为动态内容（当然事件监听 `PatchFlags.HYDRATE_EVENTS`，不在这里面）。后面会重点介绍 `patchFlag`。
+
+### dynamicChildren 对比
+
+在更新的时候，会对比前一个 vnode 生成 `dynamicChildren`，与现在生成的 `dynamicChildren`，处理如下：
+
+```javascript
+const patchBlockChildren: PatchBlockChildrenFn = (
+  oldChildren,
+  newChildren,
+  fallbackContainer,
+  parentComponent,
+  parentSuspense,
+  isSVG
+) => {
+  for (let i = 0; i < newChildren.length; i++) {
+    const oldVNode = oldChildren[i]
+    const newVNode = newChildren[i]
+    const container =
+      oldVNode.type === Fragment ||
+      !isSameVNodeType(oldVNode, newVNode) ||
+      oldVNode.shapeFlag & ShapeFlags.COMPONENT ||
+      oldVNode.shapeFlag & ShapeFlags.TELEPORT
+        ? hostParentNode(oldVNode.el!)!
+        : fallbackContainer
+    patch(
+      oldVNode,
+      newVNode,
+      container,
+      null,
+      parentComponent,
+      parentSuspense,
+      isSVG,
+      true
+    )
+  }
+}
+```
+
+在 `patchBlockChildren` 里面会对每一个新老的 `child` 一一对比，再通过 `patch` 来更新。只是看到这里就有一个问题了，在 `for` 语句里面可以看到是严格要求新老 `dynamicChildren` 数组的长度是一致的，只是真的会一样吗？
+
+比如 `v-for`，都不知道最后有多少个遍历的节点，如何确定长度呢？抱着这样的想法，试试 `v-for` 编译生成的代码：
+
+```html
+<div>
+  <a data-name="1">
+    <li v-for="i in 2">1</li>
+  </a>
+</div>
+```
+
+```javascript
+function render(_ctx, _cache) {
+  return (
+    _openBlock(),
+    _createBlock("div", null, [
+      _createVNode("a", _hoisted_1, [
+        (_openBlock(true),
+        _createBlock(
+          _Fragment,
+          null,
+          _renderList(2, (i) => {
+            return _openBlock(), _createBlock("li", null, "1");
+          }),
+          256 /* UNKEYED_FRAGMENT */
+        )),
+      ]),
+    ])
+  );
+}
+```
+
+可以看到上面为了 `v-for` 新增加了 `createBlock`，也就是对 `fragment` 这个 vnode 也赋予了 `dynamicChildren`，这样就不管有几个循环节点，外部看到的只有一个 `fragment` 片段，这样就能一一对应上了，只是虽然套多了一层 `fragment`，外面是稳定了，但是里面呢？ `for` 的数量还是不是固定的。
+
+其实执行 `_openBlock(true)` 的时候，已经将 `currentBlock` 数组置为 `false`，所以 `dynamicChildren` 也无法生成，自然 `v-for` 生成的节点无法进入 `patchBlockChildren` 函数里面。`v-for` 的 `diff`，是所有子节点都要一一 `diff`，也就是全量对比。
+
+当然也有例外，当 vnode 的 `PatchFlag` 是 `PatchFlags.STABLE_FRAGMENT` 时，表示其是一个不变的 `fragment`，最后也会通过 `patchBlockChildren` 对比子节点，而不是普通全量对比，什么是稳定的不变的片段呢？比如 `<li v-for="i in 2">1</li>` 这个片段是不可能有动态改变，是稳定的。只是为什么 `compile` 的代码没有生成 `PatchFlags.STABLE_FRAGMENT` 呢？因为这部分 `PatchFlags.STABLE_FRAGMENT` 的判断，不能在浏览器侧 compile，需要在 nodejs 端。具体判断如下
+
+1. 需要在非浏览器端 compile。
+2. 如果 `v-for` 的右侧是个变量，则不是稳定节点，除非是 this/NaN/Infinity 这样的骚操作。
+3. 其他的情况会通过 Babel 的 `parse` 方法来解析 `v-for` 的右侧生成 `ast` 树，可能存在 `v-for="i in () => 1 + 1"` 这样的骚操作，当然常量 `v-for=i in 2` 也在这个范畴里面。需要遍历 `ast` 树，来确定静态的部分。
+
+确定了 `dynamicChildren` 结构之后，就是进行 `diff` 操作。
+
+### patchFlag 与 diff
+
+`patchFlag` 是优化模式 `optimized mode` 里用到的优化标识，通过位操作来判断当前 vnode 的需要执行的 `diff` 操作。常见的 `patchFlag` 有
+
+1. `TEXT: 1`，存在动态文本内容，比如 `{{ state.count }}`。
+2. `CLASS: 1<<1`，存在动态的 class。
+3. `STYLE: 1<<2`，存在 style，如果是静态的字符串 `<div style="color: red"/>` 也会被解析成动态的 style。
+4. `PROPS: 1<<3`，存在除了 class/style 以外的动态 props 的情况。
+5. `FULL_PROPS: 1<<4`，表示 props 存在动态字段名，如 `<div :[foo]="bar">`，与上面的 `CLASS/STYLE/PROPS` 互斥。
+
+以及前面提到的 `STABLE_FRAGMENT`，当然还有更多没有来得及了解的位运算情况，另外还有特殊情况如非位操作的 `HOISTED: -1` 这些。
+
+生成的 `patchFlag` 会传入 vnode 里面，当进行 `patch` 来 `diff` 的时候就会用到，比如以下常见结构
+
+```javascript
+if (patchFlag > 0) {
+  if (patchFlag & PatchFlags.FULL_PROPS) {
+    // patchProps 对每一个props 都重新对比，遍历新的props更新/新增，在遍历老的props，若不存在则删掉
+  } else {
+    if (patchFlag & PatchFlags.CLASS) {
+      // 更新 class
+    }
+    if (patchFlag & PatchFlags.STYLE) {
+      // 更新 style
+    }
+    if (patchFlag & PatchFlags.PROPS) {
+      // 对动态props进行遍历
+    }
+    if (patchFlag & PatchFlags.TEXT) {
+      // 更新动态文案
+    }
+  }
+}
+```
+
+通过 `patchFlag` 可以精准的更新 props、class、style 和动态文案这些。这些基本就是日常操作了， `dynamicChildren` 直接更新到 vnode。现在看看复杂的情况，全量对比，比如在 `v-for` 的非稳定节点的 `diff` 操作，其中分为有 `key` 的 `children，和无` key 的。
+
+先介绍一下 `patchUnkeyedChildren`，如果没有在 `<li v-for="i in state.count"/>` 里面找到 `key` 字段，则会进入。首先会取到新老 `children` 的公共最小长度，对该范围里面的节点，进行 `patch` 处理。超出长度的节点，若是老的 children 多，则卸载，若新的 children 多则进行挂载。
+
+若是有 key，**则会执行 `patchKeyedChildren`**，（由于懒得做图，这里就简述一下）具体算法步骤：
+
+```javascript
+const patchKeyedChildren = () => {
+  let i = 0;
+  const l2 = c2.length;
+  let e1 = c1.length - 1; // 老 vnode.children 最后的索引
+  let e2 = l2 - 1; // 新 vnode.children 最后的索引
+
+  // 1. 从前往后，比如老： (a b)  新：(a b) c 的情况
+  while (i <= e1 && i <= e2) {
+    // 如果是同样类型的 vnode，即 type 和 key 是一样的，则 patch 对比，并且 i++
+  }
+  // 2. 从后往前，比如老： a (b c)  新：e (b c) 的情况
+  while (i <= e1 && i <= e2) {
+    // 如果是同样类型的 vnode，即 type 和 key 是一样的，则 patch 对比，并且 e1-- 以及 e2--
+  }
+
+  // 3. 如果新的包含老的，而新的比老的内容多，如 老的 (a b)，新的 (a b) c
+  if (i > e1) {
+    while (i <= e2) {
+      // 新增新增加的 child，同时 i++
+    }
+  }
+
+  // 4. 如果老的包含新的，而新的比老的内容少，如 老的 (a b) c，新的 (a b)
+  else if (i > e2) {
+    while (i <= e1) {
+      // 卸载老的多余的 child，同时 i++
+    }
+  }
+
+  // 还有步骤 5.1/5.2/5.3 复杂情况看下面
+};
+```
+
+上面的都是比较理想的情况，然而存在混乱的情况，比如
+老的： a b c d e f g h
+新的： a b f d e c g h
+
+所以对于步骤 5 还有有三部曲：
+
+5.1 为新的 children 生成一个 `key:index` 的 `map`，`keyToNewIndexMap` 表示新 children 中 key 和索引的关系
+5.2 设置长度为 `e2 - i`，每个元素的值为 `0` 的 `newIndexToOldIndexMap` 数组。
+
+1. 遍历老 children 节点，从 `keyToNewIndexMap` 获取与老 child 相同 key 的索引，也就是对应新节点的索引，然后通过 `patch` 函数更新，若老节点没有 key，则寻找相同 type/没有 key 的元素来对比，若还找不到，说明这个老元素在新的里面不存在，可以卸载了。
+2. 若新老可以 patch，则会设置 `newIndexToOldIndexMap[newIndex - s2] = i + 1`，指明新节点在老节点中的索引关系。比如上面的例子 `newIndexToOldIndexMap = [6, 4, 5, 3]`。
+   5.3 挂载和移动，遍历需要操作的节点，如果是 `newIndexToOldIndexMap` 存在 `0` 的值，则说明是新节点，需要挂载上。另外上面的步骤只是更新了 `vnode.el`，如果出现步骤 5 中的位置错乱的情况，目前只是更新 dom 的内容，其顺序没有改变。**这里需要根据 `newIndexToOldIndexMap` 来移动需要调整的节点**
+
+对于 5.3 里面 dom 位置的移动，Vue3 采用了 **最长递增子序列** 的[概念](https://zh.wikipedia.org/wiki/%E6%9C%80%E9%95%BF%E9%80%92%E5%A2%9E%E5%AD%90%E5%BA%8F%E5%88%97)，有动态规划的思维在里面（反正没有看懂算法），感兴趣的可以去了解一下。**该最长递增子序列是作用是尽量减少 dom 的移动。**
+
+如果出现新 children 的节点没有按照老 children 的节点顺序排列，比如例子中的 `f d e c`，就会以 `newIndexToOldIndexMap` 为输入，求得最长递增子序列对应的索引，上面的例子则是：`increasingNewIndexSequence = [1, 2]`。 后面移动的时候从后往前遍历，节点从 `c d e f` 到 `f d e c`，具体过程如下：
+
+这里 `index` 值是 5.3 步骤遍历中的索引，递减，`j`初始值为 `increasingNewIndexSequence.length - 1`。
+
+1. `index = 3` 先 `c.el` 移动到 `g` 前面, index--；
+2. `index = 2`，遇到 `e` 的时候由于 `index === increasingNewIndexSequence[j]`，均为 `2`，则不进行移动，`increasingNewIndexSequence` 的索引 j--。同理轮到 `d` 也是类似操作。
+3. `index = 0`，`f.el` 需要移动到 `d` 前面。到这里移动结束。
+
+可以看到原本是四个节点的，通过最长递增子序列的对比，可以明确哪些节点需要移动的，最后只要执行两次移动就完成了，可以说是 dom 移动的最优解吧。
+
+到这里 `diff` 的过程差不多告一段落了~~~
+
+## 总结
+
+这次 Vue3 的代码，看着很舒服，可能是 ts 的问题，哪里不懂点哪里。
+
+虽然 Vue3 还有很多内容没有研究透彻，甚至上面的部分内容，还有不少疑惑，比如 `hoist` 为什么只能在 node 端开启？`dynamicChildren` 这种方式是最优解吗？好像 react 的方式更好吧？生成 `STABLE_FRAGMENT` 的所有情况？以及其他没有学习到的，比如事件处理，插槽，比如 `v-if` `v-model` 这些。只是还是想要去别的领域走走，去深水区走走。所以 Vue/React 的学习应该会告一段落了。
