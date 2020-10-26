@@ -1,0 +1,234 @@
+国庆后一场秋雨一场寒，属于东南季风的台风带来了明显的降温，又到了一个尴尬的温度，长袖短裤都有人穿。这个温度，感觉很舒服，尤其是在海边骑单车的时候，沿着沙河路的时候，城市灯光的点缀，观景台边的海涛声、阵阵袭人的秋意就来了。
+
+本篇是介绍两个琐事，都是工作中遇到的，一个是可变字体探索，一个是 `require` 扫盲记。
+
+## Variable Fonts
+
+好像从前几个月开始，就接触了[可变字体](https://zh.wikipedia.org/zh-hans/%E5%8F%AF%E5%8F%98%E5%AD%97%E4%BD%93)，以前设计推荐的是使用 5 种字体，你没有看错，在项目里面用到了 5 、种字体，不同的粗细，不同的高瘦，每个字体都基本在 8M 左右，通过不同的字体来展示设计的风格，真是。。。挺好的。今年开始有新的字体，没有以前的 5 种，只用一个可变字体了，通过一个字体来展示之前 5 个的字体，可以说很是优秀，当然对开发而言，统一的字体最是简单，而且一个字体意味着只要加载一种就好了，之前的要加载 5 种字体，虽然一个可变字体的体积是 20 M。
+
+可以通过这个[网站](https://v-fonts.com/) 玩一下可变字体。
+
+字体，对于开发者而言，默认基本都是采用系统的字体，比如系统差别、中西文差别，还有最后的衬线字体，比如我们公司就喜欢用 `android` 的 `Roboto` 默认字体来显示数字。如果采用自己的字体的话，会把其放在最前面，所以最前面是 `OPPOSANS, Roboto, Noto Sans CJK SC, Source Han Sans CN` 后面两个是思源字体，毕竟 `OPPOSANS` 是和思源字体结合的。。。。
+
+通过设置 `font-variation-settings: "wght" 550` 可以调整字体的粗细，比如 `OPPOSANS` 字重可以调整到 `1000-1000` 区间，实现**无极调整**，不像以前的字体，只有一百倍数的 `font-weight`，而且要一个字体文件就够了。还有其他的比如 `wdth` `ital` 这些都可以设置。
+比如下图
+
+![](https://github.com/funfish/blog/raw/master/images/variableFonts.PNG)
+
+还能在这个基础上用上 `font-weight`，当然这个就不规范了。目前 `font-variation-settings` 的兼容性还是比较好的，除了 ie 和部分比较老的浏览器不支持外，其他都没有问题的。
+
+### 字体的普通处理
+
+如果是采用系统的字体那一切都挺好的，但是作为设计，作为一家最求美感的公司，就是要有自己的字体，于是普通字体的 10M 的体积，加载速度就可以劝退大部分人了。为了平滑顺利过渡字体，一般采用的是如下几个方案：
+
+1. **`font-face` 定义的时，采用 `swap` 来显示，系统会优先采用已有的字体，避免字体加载导致的阻塞，使得文字无法显示；**当然这种方案会导致字体加载成功时，页面切换会从当前字体切换到自定义字体，导致用户体验稍差。如果自定字体体积小，可以不采用 `swap` 方式。
+2. **字体文件预加载，就是在 `link` 标签里面采用 `preload` 的方式，字体资源在浏览器里，属于优先级较低的资源，通过 `link` 的预加载可以显著的提高优先级，避免字体加载时间过长，导致切换时候带来的不好体验**。
+3. **字体体积，上面更多的是辅助优化，对于中文字体而言，最重要的是体积。中文不同于其他字母语言，有非常多的字，一个字体 10 M 的体积要如何处理呢，正常会对字体文件做提取，只保留可能要用的字，也就是 glyphs。**比如只用到 `溜` 这个字，那就提取字体包里的 `溜`，这样字体文件就可以压缩的非常小了
+4. 最后是 woff、woff2 这些新格式带来的优化，以及更好的压缩算法带来的帮助。
+
+### 字体的提取历程
+
+这里要介绍是可变字体的提取问题，先看看普通字体提取，之前用的是 `font-spider`，使用下来可以满足字体的压缩，提取需要的子集，用法很方便，如下：
+
+```html
+<!-- test.html -->
+<style>
+  @font-face {
+    font-family: "source";
+    src: url("../font/source.eot");
+    font-style: normal;
+  }
+  body {
+    font-family: "source";
+  }
+</style>
+<body>
+  溜
+</body>
+```
+
+再通过指令 `font-spider ./test.html` 就可以从 `source.eot` 字体包里面压缩出仅仅包含 `溜` 一个字的字体，当然会有一点小问题，比如垂直方向的行间距变小了，但是总体问题不大，10M 的字体包，最后只剩下几 kb。这个时候如果用软件 FontForge 查看的话，可以看到 `溜` 保留下来了，其他被移除了。
+![](https://github.com/funfish/blog/raw/master/images/fontLiuNormal.PNG)
+![](https://github.com/funfish/blog/raw/master/images/fontLiuMin.PNG)
+
+上面左边是正常的字形，右边则是压缩之后的效果，可以看到压缩后周围的小伙伴都被吓跑了。
+
+只是到了可变字体，压缩就不是这样了，简简单单的 `font-spider` 打包出来的字体就不能用，会出现字体镂空的情况，而且关键是不能调整可变字体的 `wght`，设置了也不起作用，简直就是和普通字体差不多，不再是可变字体了。
+
+于是翻箱倒柜的，在 `font-spider` 里面转了一圈，结果发现里面处理字体的内容不多，更多的是对输入文件和样式处理，通过模拟的浏览器环境，自研的 `browser-x`(大佬自己写的 `Node.js` 实现的虚拟浏览器) 来获取样式，保证不同的的 `font-family` 打包出不同的字体，分析输入的参数，文字最后输出四种格式的字体，`woff woff2 svg ttf` 这些，当然在 `WebFont` 里面看到了不少冗余的代码，一度让我误解了，比如 `weight stretch` 这些属性，就不能使用。。。。可能也是大佬弃坑了吧，最后落实到压缩的还是 `fontmin` 这个库，也有三方压缩的工具都是基于 `fontmin` 的。
+
+`fontmin` 是一款中间件机制的字体处理工具，比如 `glyph` 可以用来压缩字体，比如 `ttf2woff` 可以转换字体。比如下面的官方例子：
+
+```javascript
+var Fontmin = require("fontmin");
+
+var fontmin = new Fontmin().use(
+  Fontmin.glyph({
+    text: "天地玄黄 宇宙洪荒",
+    hinting: false,
+  })
+);
+```
+
+在 `fontmin` 代码里面的 `glyph` 插件代码中可以看到如下形式：
+
+```javascript
+var TTF = require("fonteditor-core").TTF;
+var TTFReader = require("fonteditor-core").TTFReader;
+var TTFWriter = require("fonteditor-core").TTFWriter;
+function minifyTtf(contents, opts) {
+  opts = opts || {};
+  var ttfobj = contents;
+  if (Buffer.isBuffer(contents)) {
+    ttfobj = new TTFReader(opts).read(b2ab(contents));
+  }
+  var miniObj = minifyFontObject(ttfobj, opts.subset, opts.use);
+  var ttfBuffer = ab2b(new TTFWriter(opts).write(miniObj));
+  return {
+    object: miniObj,
+    buffer: ttfBuffer,
+  };
+}
+
+function minifyFontObject(ttfObject, subset, plugin) {
+  if (subset.length === 0) {
+    return ttfObject;
+  }
+  var ttf = new TTF(ttfObject);
+  ttf.setGlyf(getSubsetGlyfs(ttf, subset));
+  if (_.isFunction(plugin)) {
+    plugin(ttf);
+  }
+  return ttf.get();
+}
+```
+
+敢情 `fontmin` 也是套娃的。。。最后核心的字体处理还是要跑到 `fonteditor-core` 里面，怎么说呢， `fontmin` 是一个优秀的集成商，有字体压缩，还有字体格式转换这些功能，虽然大部分是基于第三方的。而且不管是 `fontmin` 还是 `font-spider` 也有四五年没有更新主要内容了，作者也都弃坑了。那对于 16 年底才发布的可变字体，好像不支持也是可以理解的。
+
+### table
+
+介绍到 `fonteditor-core` 就要提一下 `table` 的概念，这个是布局信息表，其包含了字形的位置、对齐、基线等等信息，字体文件则是由这一系列的表构成的，其中有部分表是可选的。
+
+**字体目录**是字体文件的指南，提供访问其他表所需的信息，包含两部分：偏移子表（offset subtable）和表目录（table directory）。偏移子表记录了字体文件中 `table` 的数量，并提供了快速访问表目录的方法。偏移子表后面就是表目录，表目录主要包含了表的 `tag`、校验、偏移、长度等信息，字体文件中的所有表都在表目录里面有入口。
+
+![](https://github.com/funfish/blog/raw/master/images/fontTableDirectory.PNG)
+
+看了不少文档，每个文档对必选的 `table` 都有自己的解释，综合一下，下面是其中有几个是非常必要的 `table`:
+
+1. cmap：字符代码到字形索引之间的映射关系，字符代码也就是字符的 `Unicode`，获得索引也就可以根据索引从字体中加载这个字形。
+2. head：字体的各种基本信息，如版本、创建、修改时间，还包括基本字体数据，如 unitsPerEm、xMin, yMin 等。
+3. hhea：水平排列信息，如 ascender、descender、lineGap 等水平排列时候的布局信息。
+4. hmtx：水平参数，如间距，如果是字形之间是等距的，那只需要一个间距就可以了。
+5. maxp：最大需求表，包含字形数量，表示字形的内存需求情况。
+6. name：命名内容，如字体名，授权信息等等。
+7. post：PostScript 表，用于打印。
+8. glyf：字形数据，也是最重要的一个表了。
+9. loca：偏移和字符索引映射关系表。
+
+上面几个表的介绍可能理解不太到位地方，因该差不多大致如此吧。另外，还有一些比如 `OS/2`: 用于 windows 系统的配置，所以对跨平台的字体就非常需要了，但是若是针对 Mac 这些就不必了。
+
+具体的字形什么的，用 `FontForge` 软件打开任意一个字体就可以看到了，比如下面的：
+
+![](https://github.com/funfish/blog/raw/master/images/fontLiuGlyph.PNG)
+
+你甚至都可以修改字形。。。。
+
+至于字体从加载到渲染出来的流程可以参考一下知乎上的[介绍](https://www.zhihu.com/question/23759223/answer/25617486)
+
+> 加载字体文件
+> 确定要输出的字体大小
+> 输入这个字符的编码值
+> 根据字体文件里面的 Charmap，把编码值转换成字形索引（就是这个字符对应字体文件中的第几个形状）
+> 根据索引从字体中加载这个字形
+> 将这个字形渲染成位图，有可能进行加粗，倾斜等变换。注意这里的倾斜和倾斜字体不同，它只是从算法上对位图进行变换，与专门制作的加粗字体是不一样的。
+
+上面介绍的是 `cmap` 根据字符代码拿到字形索引，再从 `loca` 拿到索引对应的字形偏移，最后到 `glyf` 加载字形的过程。`loca` 表可以参考以下图：
+
+![](https://github.com/funfish/blog/raw/master/images/fontLoca.PNG)
+
+每个字形都有自己长度，从而形成相对于 `0` 位置的偏移，而 `loca` 表则是记录字形索引到字形偏移的映射表。
+
+当然这里面还有很多的表的内容没有谈到，比如和 `TrueType`、`CCF`、`SVG` 以及 `BitMap` 相关的表，还有一个是高级表，比如 `GSUB` 是 `glyf` 的替换表，之前提到的一个字符代码最后可以映射到字形，但是如果是连字的时候，就不一定是简单的字形叠加，例如下面的：
+
+![](https://github.com/funfish/blog/raw/master/images/fontGSUB.PNG)
+
+可以看到单独一个字的时候都是好好的，但是一旦结合在一起，就是不是 `f + i = fi` 了，而是有新的字形。这一点在阿拉伯语中也是的，字形在不同的位置有不同的显示。。。。。（原来阿拉伯语这么神奇，简直就是蝌蚪文）。
+
+除了高级表，还有色彩相关的，其他比较杂的，最后还有一个是 `OpenType Font Variations` 可变字体，也是 `OpenType` 规范中，里面有 `avar`、`cvar`、`fvar`、`gvar`、`HVAR`、`MVAR`、`STAT` 和 `VVAR` 这几个。
+
+#### 可变字体的 table
+
+可变字体，如前面提到的，可以让设计者将多个字体合并为一个字体，下面的示意图很好的介绍了字重和字宽度变化导致字形的变化：
+
+![](https://github.com/funfish/blog/raw/master/images/variableFontsWidthWeight.PNG)
+
+这里面看到的 `width` 和 `weight` 都是 `fvar` 表所描述的，用来存储轴的信息，以及命名实例，其中命名实例是可选的字段。轴的信息，比如 `wght(100-1000)`、`width(10-200)`，包含了轴名称、最小最大值和默认值等，命名实例则是由轴与轴之间定下的命名的特定坐标，如下面几个:
+
+![](https://github.com/funfish/blog/raw/master/images/variableFVAR.PNG)
+
+可以看到轴 `wght = 400` 以及 `wdth = 100` 形成的坐标 `Regular`，也就是命名实例。`Regular` 是给特定坐标提供的预设名称，也是该子字体的名称，可以让使用者直接使用。使用可变字体的时候，如果没有指定子字体，其采用默认轴值。（css 里面修改 `font-variation-settings`，也就是实例了）。
+
+对于可变字体，有两个表是必须的：`fvar` 和 `STAT(style attributes)`，后者是样式属性，每个在 `fvar` 里面的每一条轴和子字体都需要在 `STAT` 里面有对应的信息。`STAT` 用来区分字体族下面的不同的字体，支持动态属性，比如 `fvar` 里面的 `wght(无极)`，也支持静态属性，比如 `italic` 是否为斜体这些，展示 `Variable Font` 下的样式名称，比如 `Medium` 这样的字体。
+
+其他的表则是描述 `fvar` 里面字体轴变化时字形的变化情况，例如 `avar`，是非线性的轴变化数据，例如字体的 `width` 轴，若变化区间是 `100-200`，线性的时候，则 `150` 表示字体的字形宽度是两个极值的正中间，但是非线性变化，就使得值不是均匀的变化的，`150` 可能不是字形宽度上的正中间状态。这种非线性变化也符合用户习惯。还有 `gvar`，存储字形在轴上的变化信息，描述 `glyp` 中各个点的变化情况，可以说是非常重要的。
+
+### 字体提取工具
+
+看了上面的 `table` 介绍，字体的处理，其实就是对 `table` 的处理，`fonteditor-core` 对可变字体的处理，看了一下源码的[结构](https://github.com/kekee000/fonteditor-core/tree/master/src/ttf/table)，well，根本就没有可变字体的表处理，连 `fvar` 的踪迹都没有。
+
+于是开启大海捞针的方式，在 `github` 里面找，最后发现一个 `opentypejs/opentype.js` 仓库，卧槽，难道是官方的嫡系部队？只是打开到结构目录还是很失望，都是三四年前的代码了，和 `fonteditor-core` 差不多，虽然有 `fvar` 表，但是其他可变字体的表一个都没有。抱着试一试的想法，用一下，最后的打包出来的字体，虽然比 `fonteditor-core` 好不少，但是压根就不可变。。。。毕竟连 `gvar` 也没有。最后看到了这个[roadMap](https://github.com/opentypejs/opentype.js/issues/374)，里面介绍到：
+
+![](https://github.com/funfish/blog/raw/master/images/variableFontsRoadMap.PNG)
+
+本来决定要放弃了，毕竟官方也不支持系列，但是总觉得有问题，难道可变字体没有工具？都好几年历史了，没有人造轮子吗。。。。
+
+最后找到了字体处理的重量级库 `fonttools`，一个 `python` 库，打开一看密密麻麻的的 `table` 处理，有 50 个以上的处理，对比一下 `fonteditor-core` 的 18 个表处理，简直是。。。。。。在 `fonttools` 里面也找到了各种各样的可变字体处理表，比如 `gvar`，只是对 `python` 不是很熟悉，而且一上来就看源码，有点吃力，所以就放弃了（想起了看 esbuild 源码的经历）。
+
+`fonttools` 里面有很多工具，提取字体用的是 `pyftsubset`，通过指定文件字符来确定要输出的字形，基本上一顿操作下来，从 22M 的字体包，压缩到 300kb。正常来做这就可以了，但是 **原本字体包还包含了斜、高度轴，这些轴，项目用不上，而且 `wght` 也就用到了 `550-1000` 的范围，能不能去掉剩下的部分呢？** 这样不就可以完美压缩字体了，甚至 `wght` 就用了 `550` 和 `1000` 两个值，其他的能不能抛弃掉呢？可能这个就要用专业的设计工具了（比如 Adobe Illustrator？），目前在 `fonttools` 没有看到更多可操作空间，如果有大佬晓得一定要告知。
+
+一般可变字体的体积是要大于单个字体的（字体族里面的单个字体），只有当需要用到同一字体族的多个字体的时候，可变字体收益才很大。当然如果需要艺术字那就另当别论了。另外 `font-variation-settings` 是属于比较基础的 API 了，如果要设置字重的话，可以使用 `font-weight: 550` 是不是很熟悉？这个和以前的 CSS 是一致的，只是 `CSS Fonts Level 4` 做了扩展，当然还有其他几个轴的，比如 `font-stretch`。
+
+## require
+
+相比于字体，`require` 可以说是以前的一个知识盲区。在 `Vue` 里面，如果需要加载资源可以采用 `require` 方式引入，但是时不时的总会遇到无法加载资源的问题。直到一次想要把资源路径作为 `props` 传入组件，再通过 `require` 来获取，结果是获取到图片了，但是还引发了**另外一个严重的问题，页面的样式错乱？**
+
+通过审查打包出现的代码，发现原本完全没有引入的 `scss` 文件都被打包到样式文件里面，如果去掉 `require(urlProp)` 则一切正常，这个就很神奇了，而且前者的打出的包还很大。有种奇奇怪怪的感觉。
+
+后面耐心的看 `webpack` [文档](https://webpack.js.org/guides/dependency-management/#require-with-expression)才晓得：
+
+> A context module is generated. **It contains references to all modules in that directory that can be required** with a request matching the regular expression. The context module contains a map which translates requests to module ids.
+
+如果采用 `require('./template/' + name + '.ejs')` 的方式，那 `template` 文件下面的所有 `ejs` 文件都会被引用，形成一个上下文的 `map` 对象，**导致该目录下原本不会被使用的文件，也被打包使用上了**，这也就是为什么使用了 `require(urlProp)` 会加载上错误的资源，可想而知，若 `require` 里面完全采用传参的方式，会使其无法分析正确的 `Directory`， 于是从根文件 `src` 开始查询文件。。。。。
+
+至于要如何破局呢，`urlProp` 为了可扩展性，是要从外部传入的，而里面要读取资源只能用 `require` 了，直到看到了下面的 `require.context` 的方式，表达式如下：
+
+```javascript
+require.context(
+  directory,
+  (useSubdirectories = true),
+  (regExp = /^\.\/.*$/),
+  (mode = "sync")
+);
+```
+
+通过在外部指定目录，和正则就能获得正确的资源路径，再传给 `urlProp` 就完美了。
+
+上面的 `mode` 配置呢，其实是和 `webpackMode` 类似的，有 `sync`、`eager`、`lazy`、`lazy-once`、`weak`、`async-weak` 一共六种。其中`sync` 是默认的，会直接打包到文件里面，而 `lazy` 则会生成可延迟加载单独的 `chunk`。
+
+这里我用到的是 `lazy-once`。为什么呢，因为我需要从 `require.context` 里面引入的资源非常多，肯定是要拆包的，而 `lazy` 虽然是懒加载了，但是所有文件都单独形成 `chunk`，导致增加了很多文件，`lazy-once` 就很舒服，将所有文件合成一个 `chunk`，只需要通过 `promise` 的方式获取正确的路径就可以了，比如 `urlProp(oneFileName).then(src => list.push(src))` 这样的方式。
+
+## 总结
+
+`require` 部分算是一个小知识点，至于深入的理解，比如 `Directory` 目录的获取和分析，感觉有点类似，可能是 `@babel/parser` 的形式，通过 `ast` 分析表达式来获取目录？后面的理解就没有去研究了，倒是解决了一直以来使用 `require` 的困惑（指不定以前有好多写的不太正常的 bug，采用 `require` 多加载了多余文件。。。。。呵呵呵）。
+
+字体部分，更像是一个新领域的探索，想要不断的优化页面，而新版本的字体就是重中之重了，从开始的通过 `node.js` 来 `debug`，到最后定位到 `fonteditor-core` 再到 `fonttools`，可以看到前端的字体轮子还是少了（比如参照 `fonttools` 代码，更新 `fontedior-core` ？）。更多的是学习字体的结构，看各个 `table` 的作用，对字体的展示也有初步的理解，但是没有去研究代码层面的实现，没有深入去，更多的是浅尝辄止。
+
+写完的时候又一个台风飞过，今年的台风真是奇怪。
+
+## 参考
+
+技术文档，当然微软的是 Opentype，苹果的是 TrueType 与 AAT。
+
+1. [microsoft OpenType 1.8.3 specification](https://docs.microsoft.com/zh-cn/typography/opentype/spec/)
+2. [apple Font Tables](https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html)
+3. [参数化设计与字体战争：从 OpenType 1.8 说起](https://www.thetype.com/2016/09/10968/) 很有趣的一篇历史介绍，想不到可变字体，出道快 30 年了，结果 16 年才成为统一标准。。。。。。

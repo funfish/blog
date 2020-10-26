@@ -435,4 +435,4 @@ const patchKeyedChildren = () => {
 
 这次 Vue3 的代码，看着很舒服，可能是 ts 的问题，哪里不懂点哪里。
 
-虽然 Vue3 还有很多内容没有研究透彻，甚至上面的部分内容，还有不少疑惑，比如 `hoist` 为什么只能在 node 端开启？`dynamicChildren` 这种方式是最优解吗？好像 react 的方式更好吧？生成 `STABLE_FRAGMENT` 的所有情况？以及其他没有学习到的，比如事件处理，插槽，比如 `v-if` `v-model` 这些。只是还是想要去别的领域走走，去深水区走走。所以 Vue/React 的学习应该会告一段落了。
+虽然 Vue3 还有很多内容没有研究透彻，甚至上面的部分内容，还有不少疑惑，比如 `hoist` 为什么只能在 nodejs 端开启？`dynamicChildren` 这种方式是最优解吗？好像 react 的方式更好吧？生成 `STABLE_FRAGMENT` 的所有情况？以及其他没有学习到的，比如事件处理，插槽，比如 `v-if` `v-model` 这些。只是还是想要去别的领域走走，去深水区走走。所以 Vue/React 的学习应该会告一段落了。

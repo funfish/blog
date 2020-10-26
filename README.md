@@ -51,6 +51,7 @@
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [可变字体探索与 require 扫盲记](https://github.com/funfish/blog/issues/47)
   - [工程化新秀](https://github.com/funfish/blog/issues/45)
   - [sticky 以及 swiper](https://github.com/funfish/blog/issues/42)
   - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
