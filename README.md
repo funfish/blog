@@ -8,6 +8,7 @@
 
 - 源码
 
+  - [Vue 插槽的一个 bug](https://github.com/funfish/blog/issues/48)
   - [Vue3 的 hoist 与 diff](https://github.com/funfish/blog/issues/46)
   - [nest 技术点](https://github.com/funfish/blog/issues/44)
   - [nest 初始化](https://github.com/funfish/blog/issues/43)

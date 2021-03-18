@@ -1,0 +1,244 @@
+最近工作比较忙，有想写的博客，但是一直没有下笔，想来也是有点懒了，还是要拔拔草。正值金三银四的，面试别人也以 `Vue` 源码居多，想要还是有必要学习一下插槽相关的内容。
+这次的 `bug` 私以为还是 `Vue` 本身的问题，先看看一下代码：
+
+```javascript
+// App.js
+export default {
+  components: {
+    ChildContainer: ChildContainer,
+  },
+  data() {
+    return {
+      slotsData: {
+        a: ["a", "ab", "abc"],
+        default: [],
+      },
+    };
+  },
+  computed: {
+    slots() {
+      const scopedSlots = {};
+      const { slotsData } = this;
+
+      scopedSlots.a = (props) =>
+        slotsData.a.map((item) => <div {...props}>{item}</div>);
+      return scopedSlots;
+    },
+  },
+  render() {
+    const { slotsData } = this;
+
+    return (
+      <div id="app">
+        <child-container scopedSlots={this.slots}>
+          <div>default外的默认内容</div>
+          {slotsData.default.map((item) => item)}
+        </child-container>
+      </div>
+    );
+  },
+};
+
+// ChildContainer.vue
+<template>
+  <div id="childContainer">
+    <slot></slot>
+  </div>
+</template>;
+```
+
+可以看到上面的 `App.js` 采用 `jsx` 的写法，由于 `ChildContainer.vue` 只有一个默认的 `slot`，而 `App.js` 则同时通过 `scopedSlots` 和 `children` 的方式传入了插槽内容。首先子组件里面没有使用到 `a` 插槽，所对应的内容不会渲染出去，最后会渲染出默认的内容为 `default外的默认内容`。
+
+此时表现一切都是正常的，`this.slots` 和 `slotsData.default` 各施其职，而且还充分利用了 `computed` 的缓存功能，避免重复的计算 `slots`。而当加载后，修改 `slotsData.default` 数据的发现，如 `this.slotsData.default.push('slotsData的deflaut内容')`，可以看到页面没有任何变化，难道是设置的姿势不对？这是再简单不过的，查看 `slotsData.default` 数据也是对的，只是为什么不渲染出来呢？于是换成 `$set` 来设置，已经是最完整的了，只是还是没有用。渲染函数确实再次执行了，但是输出的内容还是 `default外的默认内容`，问题出在哪里呢？
+
+这个时候把 `default外的默认内容` 这一行代码注释掉，发现再次设置 `slotsData.default` 的时候，数据生效了，同时页面有渲染 `slotsData的deflaut内容`，岂不是奇了怪了。之前通过 `Vue Dev Tool` 还可以看到生成的 `this.slots` 这个 `computed` 内容多了个 `_normalized` 字段，而且其下面还有个 `default` 函数，当注释 `default外的默认内容` 这一行的时候，这个 `_normalized` 也没有了，什么时候多了这个字段呢？看来只能看看 `Vue` 的源码，之前看的时候一直避开 `slot` 部分的，完全是个黑盒。
+
+组件输出的渲染函数的 `slot` 部分为 `_vm._t("default")`, 其中 `_t` 就是如下函数：
+
+```javascript
+// 省略部分代码
+function renderSlot(name, props) {
+  const scopedSlotFn = this.$scopedSlots[name];
+  let nodes;
+  if (scopedSlotFn) {
+    // scoped slot
+    props = props || {};
+    nodes = scopedSlotFn(props);
+  } else {
+    nodes = this.$slots[name];
+  }
+  const target = props && props.slot;
+  if (target) {
+    return this.$createElement("template", { slot: target }, nodes);
+  } else {
+    return nodes;
+  }
+}
+
+// _render 函数里面
+vm.$scopedSlots = normalizeScopedSlots(
+  _parentVnode.data.scopedSlots,
+  vm.$slots,
+  vm.$scopedSlots
+);
+```
+
+可以看到 `renderSlot` 的最终输出取决于 `vm.$scopedSlots`，没有的话再是 `vm.$slots`，而 `$scopedSlots` 的生成取决于
+
+1. `_parentVnode.data.scopedSlots` 节点 `vnode` 数据的 `scopedSlots` 字段，也就是上文业务中的 `this.slots`；
+2. `vm.$slots` 实例自身的生成的 `$slots`，一般是通过 `resolveSlots` 解析标签来匹配获得实例的 `slots` 节点;
+3. `vm.$scopedSlots` 前一个 `$scopedSlots`；
+
+在上面例子中，当更新 `default` 的数据的时候，`_parentVnode.data.scopedSlots` 和 `default` 数据没有关系所以不会更新，而 `vm.$slots` 则是包含了更新了的 `default` 插槽的数据，也就是包含了 `default外的默认内容` 以及 `slotsData的deflaut内容` 两个节点，只是在 debug 过程中发现最后生成的 `vm.$scopedSlots` 有大大的问题。
+
+先看看 `normalizeScopedSlots` 方法
+
+```javascript
+// 省略部分代码
+function normalizeScopedSlots(slots, normalSlots, prevSlots) {
+  let res;
+  const hasNormalSlots = Object.keys(normalSlots).length > 0;
+  const isStable = slots ? !!slots.$stable : !hasNormalSlots;
+  const key = slots && slots.$key;
+  if (!slots) {
+    res = {};
+  } else if (slots._normalized) {
+    return slots._normalized;
+  } else {
+    res = {};
+    for (const key in slots) {
+      if (slots[key] && key[0] !== "$") {
+        res[key] = normalizeScopedSlot(normalSlots, key, slots[key]);
+      }
+    }
+  }
+  for (const key in normalSlots) {
+    if (!(key in res)) {
+      res[key] = proxyNormalSlot(normalSlots, key);
+    }
+  }
+  if (slots && Object.isExtensible(slots)) {
+    (slots: any)._normalized = res;
+  }
+  return res;
+}
+```
+
+首次加载的时候，由于父节点的 `scopedSlots` 是一个 `computed` 返回的对象，最后会将生成的 `res` 赋值给 `scopedSlots.__normalized`，而这个 `res` 也包含了 `vm.$slots` 部分，也就是原本通过 `computed` 传入的对象是不包含 `default` 插槽的，但是 `res` 是全部的内容，也就会包含 `default` 内容，渲染内容为 `default外的默认内容` 的节点，最后会被挂载到 `computed` 输出值的 `_normalized` 字段。
+
+首次渲染自然是没有问题的，因为 `_normalized` 也是最新的。当第二次执行 `normalizeScopedSlots` 的时候，由于 `computed` 缓存，这个 `_normalized` 字段也被缓存下来了，由于存在 `_normalized`，会返回上一次生成的 `default` 数据，不会包含最新数据的 `vm.$slots` 的数据返回，在后续的 `renderSlot` 一直是获取老的数据。
+
+通过测试将 `slots` 从 `computed` 变成 `methods`，问题就解决了，那这应该是算 `Vue` 的 `bug` 了，没有设想到传入的 `scopedSlots` 是一个缓存值。只是要使用的话如何好呢，有两个方法：
+
+1. 彻底放弃在 `jsx` 组件里面嵌套插槽的写法，全部写在 `jsx` 的 `scopedSlots` 里面；这样每次更新插槽数据，都会重新触发 `computed` 从而更新 `jsx` 的 `scopedSlots`，只是这样一个插槽更新了，所有的插槽都要计算一次，效果还是稍微差了一点；
+2. 子组件为单文件组件，其采用 `renderSlot` 的渲染，那如果采用 `jsx` 指定插槽呢。比如 `this.$slots.default` 这样岂不是快哉，只是上面的还缺了点，还需要 `$scopedSlots`，所以应该是 `this.$scopedSlots.default ? this.$scopedSlots.default(props) : this.$slots.default`
+
+## scopedSlots 与 slots 如何区分？
+
+`scopedSlots` 与 `slots` 是两个不同的部分，正如字面意思，前者是作用域插槽，后者是插槽，但是呢，具体区分更多的是按照 2.6 版本来的，比如如下写法：
+
+```html
+<layout>
+  <template v-slot:name> name </template>
+</layout>
+```
+
+表面是是没有看到作用域的，但是采用了 2.6 的新写法，最后通过编译会输出 `scopedSlots` 到 `vnode`:
+
+```javascript
+// compile 阶段的生成AST树过程
+// 省略部分代码
+function processSlotContent(el) {
+  // slot="xxx"
+  const slotTarget = getBindingAttr(el, "slot");
+  if (slotTarget) {
+    el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget;
+    el.slotTargetDynamic = !!(
+      el.attrsMap[":slot"] || el.attrsMap["v-bind:slot"]
+    );
+  }
+  // 2.6 v-slot syntax
+  if (el.tag === "template") {
+    // v-slot on <template>
+    const slotBinding = getAndRemoveAttrByRegex(el, slotRE);
+    if (slotBinding) {
+      const { name, dynamic } = getSlotName(slotBinding);
+      el.slotTarget = name;
+      el.slotTargetDynamic = dynamic;
+      el.slotScope = slotBinding.value || emptySlotScopeToken; // 新的slot有slotScope
+    }
+  }
+}
+// compile 阶段的 ast 过程
+// 省略部分代码
+function closeElement(element) {
+  if (currentParent && !element.forbidden) {
+    if (element.elseif || element.else) {
+      processIfConditions(element, currentParent);
+    } else {
+      if (element.slotScope) {
+        // scoped slot
+        // keep it in the children list so that v-else(-if) conditions can
+        // find it as the prev node.
+        var name = element.slotTarget || '"default"';
+        (currentParent.scopedSlots || (currentParent.scopedSlots = {}))[
+          name
+        ] = element;
+      }
+      currentParent.children.push(element);
+      element.parent = currentParent;
+    }
+  }
+}
+// compile 阶段的 codegen 过程
+// 省略部分代码
+function genData(el, state) {
+  if (el.slotTarget && !el.slotScope) {
+    data += `slot:${el.slotTarget},`;
+  }
+  // scoped slots
+  if (el.scopedSlots) {
+    data += `${genScopedSlots(el, el.scopedSlots, state)},`;
+  }
+}
+```
+
+可以看到 `processSlotContent` 里面上半部分是对 `slot=name` 判断，是对老的写法的处理，而下面部分则是对 2.6 版本的新写法 `template` 与 `v-slot` 组合的处理，新的部分最后输出包含了 `slotScope` 字段，而旧的版本没有。由于上面例子没有设置作用域，所以 `slotScope` 为 `emptySlotScopeToken` 也就是 `_empty_` 字符串。在随后的 `closeElement` 里面，若有 `slotScope`，则会将其设置到父节点的 `scopedSlots` 里面，形成一个插槽对象。
+
+到这里都是生成 `AST` 的过程，后面 `codegen` 阶段，会根据新老写法的不同，生成 `slot` 与 `scopedSlots` 数据，其中 `genScopedSlots` 返回的是编译好的渲染函数，而 `slot` 则不同，插槽内容，以 `children` 的形式存在与父节点中，只是其属性有 `slot` 而已。
+
+生成的 `scopedSlots` 数据会传入到 `vnode` 里面，最后传入上面提到的 `normalizeScopedSlots` 返回给实例的 `$scopedSlots`，而 `$slot` 则会根据前面传入的 `vnode` 的 `slot` 数据生成。
+
+上面是父组件里面生成 `ChildContainer` 的插槽信息，包括生成 `scopedSlots` 数据这些，而最后在 `ChildContainer` 编译阶段，会根据 `slot` 标签名的不同生成对应的 `VNode`，方法如下：
+
+```javascript
+function renderSlot(name, fallback, props, bindObject) {
+  const scopedSlotFn = this.$scopedSlots[name];
+  let nodes;
+  if (scopedSlotFn) {
+    // scoped slot
+    props = props || {};
+    if (bindObject) {
+      props = extend(extend({}, bindObject), props);
+    }
+    nodes = scopedSlotFn(props) || fallback;
+  } else {
+    nodes = this.$slots[name] || fallback;
+  }
+
+  const target = props && props.slot;
+  if (target) {
+    return this.$createElement("template", { slot: target }, nodes);
+  } else {
+    return nodes;
+  }
+}
+```
+
+可以看到有 `$scopedSlots` 就会直接输出，没有会出采用 `$slots` 的数据，`fallback` 则是默认的插槽内容。最后返回的是 `VNode` 数据，给到子组件。
+
+最后在 `normalizeScopedSlots` 可以发现，`$slots` 的也是会传入 `$scopedSlots` 里面的，所以项目中直接用 `$scopedSlots` 就可以了，同时 `_parentVnode.data.scopedSlots` 数据也会传给 `$slots` 里面的，某种程度说，是 `$scopedSlots` 和 `$slots` 区别不大的。
+
+## 总结
+
+跟着问题学习源码，还是很快的，只是觉得，自己还在看 `Vue` 源码的，有点不太行，一直想要突破到别的领域的，看来遥遥无期。
