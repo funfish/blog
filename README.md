@@ -2,7 +2,7 @@
 
 纸上得来终觉浅，绝知此事要躬行，望厚积薄发
 
-欢迎大家多多指点，坐标深圳。邮箱：vnfishchuang@gmail.com
+欢迎大家多多指点，坐标深圳，找工作 ing。邮箱：vnfishchuang@gmail.com
 
 目录
 
