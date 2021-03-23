@@ -1,0 +1,23 @@
+language: node_js
+
+node_js: stable
+
+script:
+  - git clone https://github.com/funfish/blog.git
+  - cd blog
+  - git checkout master
+  - cd ../
+  - git clone https://github.com/funfish/blog-sys.git
+  - cd blog-sys
+  - git checkout master
+  - cd ../blog
+  - cp *.{md,mdown} ../blog-sys/static/_posts
+  - git config user.name "funfish"
+  - git config user.email "vvncwvv@yeah.net"
+  - cd ../blog-sys/static/_posts
+  - git add *.md *.mdown
+  - git commit -m "Travis CI AUTO at `date +"%Y-%m-%d %H:%M"`"
+  - git push --quiet "https://${GITHUB_TOKEN}@github.com/funfish/blog-sys.git" master:master
+  - cd ../../
+  - npm run install
+  - next build && next export && touch out/.nojekyll && git add out/ && git commit -m \"Travis CI AUTO at `date +"%Y-%m-%d %H:%M"` to gh-pages\" && git subtree push --prefix out origin gh-pages
