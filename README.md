@@ -1,8 +1,8 @@
 # 博客
 
-纸上得来终觉浅，绝知此事要躬行，望厚积薄发
+纸上得来终觉浅，绝知此事要躬行，望厚积薄发。坐标深圳，找工作 ing
 
-欢迎大家多多指点，坐标深圳，找工作 ing。邮箱：vnfishchuang@gmail.com
+欢迎大家多多指点。邮箱：vnfishchuang@gmail.com
 
 目录
 
@@ -42,17 +42,16 @@
   - [2017 年最流行的 Node.js 教程精选 | @RisingStack](https://www.zcfy.cc/article/the-most-popular-node-js-tutorials-of-2017-risingstack)
 
 - 书
-
   - [白帽子讲 web 安全](https://github.com/funfish/blog/issues/15)
   - [强制转换](https://github.com/funfish/blog/issues/10)
   - [You-Dont-Know-JS 之作用域与闭包](https://github.com/funfish/blog/issues/5)
   - [You-Dont-Know-JS 之 this 与对象原型](https://github.com/funfish/blog/issues/6)
 
 - nodejs 初识系列
-
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [要有一次的装修](https://github.com/funfish/blog/issues/51)
   - [eslint 多语言规则](https://github.com/funfish/blog/issues/49)
   - [可变字体探索与 require 扫盲记](https://github.com/funfish/blog/issues/47)
   - [工程化新秀](https://github.com/funfish/blog/issues/45)
