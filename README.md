@@ -8,7 +8,7 @@
 
 - 源码
 
-  - [react 状态管理选择](https://github.com/funfish/blog/issues/52)
+  - [react 状态管理选择](https://github.com/funfish/blog/issues/53)
   - [图像分类应用的一次探索](https://github.com/funfish/blog/issues/50)
   - [Vue 插槽的一个 bug](https://github.com/funfish/blog/issues/48)
   - [Vue3 的 hoist 与 diff](https://github.com/funfish/blog/issues/46)
