@@ -1,0 +1,151 @@
+如何将复杂的动画效果合成为视频？比方我们有一个炫酷的动画，可能是用 canvas 或者操作 dom 的方式来实现的，用户想要将动画效果分享给其他人，可以用电脑的录屏软件来录制视频，再分享给其他人，正常基本都是这么操作的，但是作为一个产品，则需要提供一个下载的功能，让用户可以直接下载视频，更好的用户体验，那么要如何实现呢？合成视频的方式很多：
+
+1. 多媒体技术，浏览器提供的原生 `getDisplayMedia`, 以及使用 RecordRTC 技术 https://github.com/muaz-khan/RecordRTC 可以更加方便操作，输出音频、视频、gif等。
+2. web 端发送 canvas 帧数据到服务端，在服务端合成，可以通过 CCapture 的 ffmpegserver.js 方式，也可以直接用原生的 ffmpeg。
+3. `canvas.captureStream`，会返回一个 MediaStream 对象。可以通过这个对象创建一个 MediaRecorder 来录屏。
+
+
+## 多媒体
+
+上面提到的第一种和第三种是有关联的，单纯的屏幕录制无法设定绘制区域，录屏到输出视频的整体流程如下：
+
+![ffmpeg-display-media](https://s2.loli.net/2023/07/27/anIETYJGt8weKck.jpg)
+
+通过 `getDisplayMedia` 获取 MediaStream 对象，正常来说传入到 MediaRecorder，开始录制就可以了了，但是为了绘制特定区域动画效果，需要转化处理，逐帧绘制到 canvas，获取该 canvas 的 MediaStream 对象，再生成。
+
+该方式的最大问题是用户感知，调用 `getDisplayMedia` 需要用户许可，调用会触发弹窗获取用户授权，在 mac 下有如下弹窗：
+
+![display-media-allow](https://s2.loli.net/2023/07/27/tsTeyxGzr96QZNE.png)
+
+可以看到弹出窗的选项也很复杂，需要选中到 chrome 的当前标签页面才可以，否则就是无效授权，而且授权后页面还一直会有顶部栏的录屏提示，体验很糟糕。
+
+上面的整体流程为什么这么长，还有另外一个问题是浏览器对媒体类型支持情况差，可以用 `MediaRecorder.isTypeSupported` 来检测浏览器是否支持该媒体类型，对于视频类型，Chrome 不支持 video/mp4，兼容性比较好的是 video/webm，也就是说最后生成的视频是 webm 类型，但是不符合用户习惯，所以上面流程最后要引入 ffmpeg，将 webm 格式的数据转 mp4。
+
+## ffmpeg
+
+ffmpeg 是个很强大的音视频等流媒体处理工具，而上面提到的 ffmpeg.wasm 是其浏览器版本，WebAssembly 让 C/C++ 实现的 ffmpeg，也能运行。模拟出原生端的处理流程，让 web 端也有原生端的能力。
+
+在多媒体的流程里面用 `getDisplayMedia` 录制屏幕，获取 MediaStream 对象，其实 `canvas.captureStream` 也可以。所以有如下实现
+
+```javascript
+// ffmpeg 转换 webm 到 mp4
+const transcode = async (webmData) => {
+    const name = 'trans.webm';
+    await ffmpeg.load();
+    console.time('开始转换', Date.now());
+    await ffmpeg.FS('writeFile', name, webmData);
+    await ffmpeg.run('-i', name, 'output.mp4');
+    console.log('转换结束', Date.now());
+    const data = ffmpeg.FS('readFile', 'output.mp4');
+
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+    // 下载视频
+    let a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = 'pageDesign.mp4';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
+
+// canvas 为已经有的 canvas 对象
+const stream = canvas.captureStream();
+const recorder = new MediaRecorder(stream, { mimeType: `video/webm` });
+const data = [];
+
+recorder.ondataavailable = function (event) {
+    if (event.data && event.data.size) {
+        data.push(event.data);
+    }
+};
+recorder.onstop = async () => {
+    const blob = new Blob(data, { type: 'video/webm' });
+    transcode(new Uint8Array(await blob.arrayBuffer()));
+};
+recorder.start();
+
+setTimeout(() => {
+    recorder.stop();
+}, 5000);
+```
+
+可以看到 ffmpeg.wasm 使用方式，和 cli 的完全一致。上面的代码是将 canvas 的 MediaStream 对象录制为 webm 格式，然后通过 ffmpeg.wasm 转换为 mp4 格式，最后下载到本地。ffmpeg 操作的简单操作是如此，如果涉及到其他的视频编辑、音频合成就会复杂很多。ffmpeg.wasm 使用过程中还遇到不少问题：
+
+1. SharedArrayBuffer is not defined
+SharedArrayBuffer 是一个新的 JavaScript 类型，可以在多个 worker 之间共享内存，在默认情况下多个线程之间的数据是隔离的，如果要是用其他线程的数据，就必须将其复制过来，通过 postMessage 发送数据。SharedArrayBuffer 的 API 与ArrayBuffer 是一样，使用 SharedArrayBuffer 可以降低 worker 之间反复数据交换导致的耗时，便于多线程操作。
+
+不过它要求页面 [跨域隔离](https://developer.chrome.com/blog/enabling-shared-array-buffer/#cross-origin-isolation)，简单操作就是 html 文档返回的 header 要加上 `Cross-Origin-Embedder-Policy: require-corp` 和 `Cross-Origin-Opener-Policy: same-origin`，上面的配置表示文档只能从相同的源加载资源，或显式标记为可从另一个源加载的资源。虽然 SharedArrayBuffer 可以用了，不过会导致大量的资源跨域问题，包括 js/css/png 等各种 cdn 资源都会有问题：
+
+![ffmpeg-issue1](https://s2.loli.net/2023/07/27/HDMdWv5J9Iixnfz.png)
+
+需要在 header 添加上 `cross-origin-resource-policy:cross-origin`。可以说为了解决 SharedArrayBuffer 问题，需要运维处理一堆跨域资源加载问题，尤其是 cdn 的资源。
+
+还有 Safari 对 SharedArrayBuffer 支持比较差，15.1 版本之前的都不支持，可以查看 https://caniuse.com/sharedarraybuffer。
+
+当然也可以不用 SharedArrayBuffer，采用单线程的方式，只是会降低性能：
+
+```javascript
+const ffmpeg = createFFmpeg({
+  mainName: 'main',
+  corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+});
+```
+
+2. ffmpeg.wasm 体积太大
+ffmpeg.wasm 打包到 dist 后的资源增加不多，但是引入后会主动引入多个文件，其中最大的是 core 包，其体积非常大，有 24.5M，官方放在 cdn 上的资源已经通过 Brotli 压缩算法，也要 8.5M，网速比较快也要七八秒，需要增加 loading 交互过程，提高用户体验。
+
+另外还有性能、内存等问题，web 端的执行速度比原生的慢不少，同时如果视频较大也会有内存问题，这两个都需要去单独测试性能才行。
+
+web 端的问题会比较多，也可以采用服务端运行原生的 ffmpeg，也就是第二种方法，web 端发送 canvas 帧数据到服务端，服务端来合成，这种方式主要问题还是要如何合成要发送的 canvas 帧数据，以及需要考虑网络传输的体积大小问题，一帧 100kb，5秒的视频至少要传递 12M 了，网络传输也吃不消，这种方式更加棘手。
+
+## dom 绘制
+
+上面提到的三个方式都是需要通过 canvas 绘制来，包括 ffmpeg 的例子也是用 `canvas.captureStream` 的方式，但是如果是 dom 的结构，又要如何合成视频呢？一种常见的方式是将 dom 转为 canvas，比如通过 html2canvas 这个插件。然而有个严重问题是，当前的转为 canvas 帧后，无法记录动态的结构，比如 gif、css 的 transform 这些，每次获取 canvas 帧都是一个样的。那要如何解决？于是分析竞品的实现，其本身也是 dom 结构，并且输出的 gif 或者视频也是 web 端实现，那究竟如何处理的，解决动态元素的问题？
+
+### elementsToCanvas
+竞品没有采用通用的 html2canvas 插件，而是自定义了一套 elementsToCanvas 的方式，对于动态的 gif 内容，会单独解析转换成一帧一帧的，然后在 canvas 上依次绘制。比如下面的效果，从最底层到最上层分别是静态图、gif、静态图、gif，形成类似汉堡包的结构。会将动态的两个元素转为 canvas 帧，然后在 canvas 上按照顺序绘制。其生成数据结构如下：
+
+```javascript
+// 其中 canvas3 为静态的笑脸图，此外canvas 画布的底图是包含了右下角的静态图。
+const transFrams = [
+    // 第一帧
+    [ { canvas2-1, startTime, delay }, canvas3, { canvas4-1, startTime, delay }],
+    // 第二帧
+    [ { canvas2-2, startTime, delay }, canvas3, { canvas4-2, startTime, delay }],
+    // 后续还有 38 个类似的序列帧
+]
+```
+
+每帧按照从底部到顶部的顺序绘制，生成实时的动态帧。elementsToCanvas 的过程还涉及很多细节操作，比如 props 处理等。由于帧的长度可能过大，还会放弃某些帧来减少大小，比如原本 90 帧，最后只保留 40 帧。这样可以减少生成的 canvas 数量，避免最后合成的 gif 太大。
+
+### 导出部分
+最后会输出 40 个 canvas 帧，但是如果每个图像 400kb，那最后合成的图会很大，于是先通过 upng 包的 `compressPng` 方法在 web 端压缩图片，降低体积，该过程 js 执行时间比较长，可以放在 worker 端操作。最后再用 omggif 将帧合并为 gif。
+
+竞品通过自定义一套 elementsToCanvas 合成体系来避免 html2canvas 的问题，同时采用 upng 和 omggif 来压缩合成输出的 gif，并且都是在 web 端操作的，减少服务端的压力，除去资源加载，5s 长度的 gif 整体耗时在 1s 左右。
+
+dom 的处理方式只能走自定义的 canvas，然后通过帧合成了吗？其实还有另外一种另辟蹊径的方式，就是用 puppeteer 来处理。
+
+## puppeteer
+
+puppeteer 是一个无头浏览器，可以用来模拟浏览器的操作，比如打开页面、点击、截图等。通过 puppeteer 打开页面后，等资源加载好，就可以调用 `page.screenshot` 来截图，最后通过 ffmpeg 将截图合成为视频。这种方式的好处是可以直接用原生的 ffmpeg，不需要用 ffmpeg.wasm，同时也不需要用到 SharedArrayBuffer，也就不用处理跨域问题，只需要处理 puppeteer 的性能问题。
+
+`page.screenshot` 的方式会存在性能差的问题，一次耗时上百毫秒，所以推荐用 `startScreencast` 来获取每一帧的数据，是 DevTools Protocol 里面的方法, 可以对数据流处理，合成视频的方式也可以用 puppeteer-screen-recorder 来录制视频，用的也是 `startScreencast` 的方式，同时还会用 ffmpeg 来生成视频，操作简单。除了前面两种截图的方式，还有一种是 tracing 的方式，也是基于 DevTools Protocol 的，不过最多会有450帧的限制，后面都是静态图像。这三种方式也有人做过[https://github.com/TomasHubelbauer/node-puppeteer-apng/blob/main/test]，可以看看效果。          
+
+还有其他的录屏方式，比如 puppeteer 里面调用 getUserMedia 方式录屏，加上 `--auto-select-desktop-capture-source` 参数可以避免授权问题。还有 rrweb 录制，通过rrweb-snapshot 提供 snapshot 和 rebuild 两个API，分别实现生成可序列化虚拟 dom 快照的数据结构和将其数据结构重建为对应 dom 节点的两个功能。常用于异常回放，比如用户操作回放。不过最终还是缺少图像生成和视频的合成，rrweb 也需要在后台启动 puppeteer 来处理，最后还是用 ffmpeg 来合成视频，本质还是要通过 puppeteer 来处理。
+
+## 总结
+视频合成的流程先是生成图像数据，再将数据合并为视频。数据生成可以用 canvas、puppeteer、`getDisplayMedia` 等方式，但是 `getDisplayMedia` 方式需要用户许可，感知太强，不可取。视频或者 gif 的生成可以用 MediaRecorder、ffmpeg、gif.js 的方式来处理，不过 MediaRecorder 仅支持 webm 格式，需要转换为 mp4，gif.js的方式的第三方包缺乏维护，并且后续合成 video 等方式对 cpu 消耗大。最通用的是 ffmpeg，在 web 端面临的问题体积大和 SharedArrayBuffer 使用。
+
+对于 gif 以及其他元素动画，dom 结构实现简单，但是到了 canvas 要做到动态计算每一帧的内容，去实时渲染更新，对 dom 结构的动画效果，转换为 canvas 图像需要单独处理，可以想象坑会有不少。
+
+综上用 puppeteer 方式比较友好，但是存在高并发问题，需要频繁创建，导致内存不足；还需考虑页面录屏过程，如果合成视频时长大，整体耗时比会更加长，简单的动画，用户要等待几秒才能下载的视频，在高并发下，这个问题会更加明显。
+
+
+### 参考
+1. [借助ffmpeg.wasm纯前端实现多音频和视频的合成](https://www.zhangxinxu.com/wordpress/2021/03/ffmpeg-wasm-audio-video-merge/)
+2. [SharedArrayBuffer以及跨域隔离](https://juejin.cn/post/7184319485107503159)
+3. [Cross-origin isolation overview](https://developer.chrome.com/blog/enabling-shared-array-buffer/#cross-origin-isolation)
+4. [30+ Simple Demos using RecordRTC](https://www.webrtc-experiment.com/RecordRTC/simple-demos/)
+5. [利用puppeteer来录制网页操作导出 GIF 动图](https://zhuanlan.zhihu.com/p/172293774)
+6. [startScreencast feature?](https://github.com/puppeteer/puppeteer/issues/478)
