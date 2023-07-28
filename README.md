@@ -52,6 +52,7 @@
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [视频合成方案](https://github.com/funfish/blog/issues/54)
   - [AI抠图](https://github.com/funfish/blog/issues/54)
   - [要有一次的装修](https://github.com/funfish/blog/issues/51)
   - [eslint 多语言规则](https://github.com/funfish/blog/issues/49)
