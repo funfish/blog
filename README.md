@@ -6,6 +6,12 @@
 
 目录
 
+- AI
+
+  - [转 3d 动效果](https://github.com/funfish/blog/issues/56)
+  - [视频合成方案](https://github.com/funfish/blog/issues/55)
+  - [AI 抠图](https://github.com/funfish/blog/issues/54)
+
 - 源码
 
   - [react 状态管理选择](https://github.com/funfish/blog/issues/53)
@@ -43,17 +49,17 @@
   - [2017 年最流行的 Node.js 教程精选 | @RisingStack](https://www.zcfy.cc/article/the-most-popular-node-js-tutorials-of-2017-risingstack)
 
 - 书
+
   - [白帽子讲 web 安全](https://github.com/funfish/blog/issues/15)
   - [强制转换](https://github.com/funfish/blog/issues/10)
   - [You-Dont-Know-JS 之作用域与闭包](https://github.com/funfish/blog/issues/5)
   - [You-Dont-Know-JS 之 this 与对象原型](https://github.com/funfish/blog/issues/6)
 
 - nodejs 初识系列
+
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
-  - [视频合成方案](https://github.com/funfish/blog/issues/54)
-  - [AI抠图](https://github.com/funfish/blog/issues/54)
   - [要有一次的装修](https://github.com/funfish/blog/issues/51)
   - [eslint 多语言规则](https://github.com/funfish/blog/issues/49)
   - [可变字体探索与 require 扫盲记](https://github.com/funfish/blog/issues/47)
