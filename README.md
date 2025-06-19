@@ -7,11 +7,16 @@
 目录
 
 - AI
-
+  - [震撼于deepSeek](https://github.com/funfish/blog/issues/58)
   - [转 3d 动效果](https://github.com/funfish/blog/issues/56)
   - [视频合成方案](https://github.com/funfish/blog/issues/55)
   - [AI 抠图](https://github.com/funfish/blog/issues/54)
 
+- 优化
+  - [PixiJS性能优化](https://github.com/funfish/blog/issues/59)
+  - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
+  - [webpack 构建优化](https://github.com/funfish/blog/issues/16)
+    
 - 源码
 
   - [react 状态管理选择](https://github.com/funfish/blog/issues/53)
@@ -60,12 +65,12 @@
   - [初识系列：nodejs 之 stream 可读流](https://github.com/funfish/blog/issues/13)
 
 - 其他
+  - [现代 web 视频处理：FFmpeg.wasm](https://github.com/funfish/blog/issues/57)
   - [要有一次的装修](https://github.com/funfish/blog/issues/51)
   - [eslint 多语言规则](https://github.com/funfish/blog/issues/49)
   - [可变字体探索与 require 扫盲记](https://github.com/funfish/blog/issues/47)
   - [工程化新秀](https://github.com/funfish/blog/issues/45)
   - [sticky 以及 swiper](https://github.com/funfish/blog/issues/42)
-  - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
   - [web 图像 - 一次分享](https://github.com/funfish/blog/issues/40)
   - [页面搭建工具盘点](https://github.com/funfish/blog/issues/39)
   - [视频优化(2) 与 ios 滑动 bug 研究](https://github.com/funfish/blog/issues/38)
@@ -76,7 +81,6 @@
   - [HTTP 2 笔记](https://github.com/funfish/blog/issues/27)
   - [网络请求](https://github.com/funfish/blog/issues/26)
   - [三种常见算法](https://github.com/funfish/blog/issues/18)
-  - [webpack 构建优化](https://github.com/funfish/blog/issues/16)
   - [文件的故事](https://github.com/funfish/blog/issues/14)
   - [webpack 工具介绍](https://github.com/funfish/blog/blob/master/201712/webpack工具介绍.pdf)
   - [初识后端开发 express+MySQL](https://github.com/funfish/blog/issues/11)
