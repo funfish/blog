@@ -13,6 +13,7 @@
   - [AI 抠图](https://github.com/funfish/blog/issues/54)
 
 - 优化
+  - [Vue 性能优化](https://github.com/funfish/blog/issues/60)
   - [PixiJS性能优化](https://github.com/funfish/blog/issues/59)
   - [秒开 hybrid H5 优化记](https://github.com/funfish/blog/issues/41)
   - [webpack 构建优化](https://github.com/funfish/blog/issues/16)
